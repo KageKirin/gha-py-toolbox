@@ -1,0 +1,102 @@
+name: Test dotnet/build-pack-publish macro and underlying actions
+
+on:
+  push:
+    paths:
+    - actions/dotnet/build
+    - actions/dotnet/pack
+    - actions/dotnet/publish
+    - macros/dotnet/build-pack-publish
+    - .github/workflows/test-dotnet-buipapu.yml
+    - test-data/dotnet/HelloWorld
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+    - actions/dotnet/build
+    - actions/dotnet/pack
+    - actions/dotnet/publish
+    - macros/dotnet/build-pack-publish
+    - .github/workflows/test-dotnet-buipapu.yml
+    - test-data/dotnet/HelloWorld
+
+jobs:
+  build:
+    runs-on: ${{matrix.platform}}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+        configurations:
+        - Debug
+        - Release
+        - Debug Release
+        frameworks:
+        - net8.0
+        - netstandard2.1
+        - net8.0 netstandard2.1
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./actions/dotnet/build
+      with:
+        path: test-data/dotnet/HelloWorld
+        projects: HelloWorld.csproj
+        configurations: ${{matrix.configurations}}
+        frameworks: ${{matrix.frameworks}}
+
+  build-pack:
+    runs-on: ${{matrix.platform}}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+        configurations:
+        - Debug
+        - Release
+        - Debug Release
+        frameworks:
+        - net8.0 netstandard2.1
+    steps:
+    - uses: actions/checkout@v4
+    - id: build
+      uses: ./actions/dotnet/build
+      with:
+        path: test-data/dotnet/HelloWorld
+        projects: HelloWorld.csproj
+        configurations: ${{matrix.configurations}}
+        frameworks: ${{matrix.frameworks}}
+    - id: pack
+      uses: ./actions/dotnet/pack
+      with:
+        path: test-data/dotnet/HelloWorld
+        projects: HelloWorld.csproj
+        configurations: ${{matrix.configurations}}
+        frameworks: ${{matrix.frameworks}}
+
+  build-pack-publish:
+    runs-on: ${{matrix.platform}}
+    needs: build-pack
+    strategy:
+      matrix:
+        platform:
+        - ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+    - uses: actions/checkout@v4
+    - id: build-pack-publish
+      uses: ./macros/dotnet/build-pack-publish
+      with:
+        path: test-data/dotnet/HelloWorld
+        projects: HelloWorld.csproj
+        configurations: Release
+        frameworks: >-
+          net8.0
+          netstandard2.1
+        token: ${{secrets.GITHUB_TOKEN}}
