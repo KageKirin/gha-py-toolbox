@@ -1,0 +1,80 @@
+name: .NET MACRO Restore & Build
+description: >
+  Macro action performing the following:
+  * dotnet-restore
+  * dotnet-build
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  configurations:
+    description: >
+      configuration(s) to build for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to build for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+
+  restore-options:
+    description: >
+      supplementary command line options forwarded to `dotnet restore`
+      whitespace separated list.
+    required: false
+    default: ''
+  build-options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+
+  nuget-cache:
+    description: >
+      path(s) to cache for nuget packages.
+      empty (default): no cache
+    required: false
+    default: ''
+  build-cache:
+    description: >
+      path(s) to cache for build artifacts.
+      empty (default): no cache
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: restore
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/restore@main
+    with:
+      path: ${{inputs.path}}
+      projects: ${{inputs.projects}}
+      options: ${{inputs.restore-options}}
+      cache: ${{inputs.nuget-cache}}
+
+  - id: build
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/build@main
+    with:
+      path: ${{inputs.path}}
+      projects: ${{inputs.projects}}
+      configurations: ${{inputs.configurations}}
+      frameworks: ${{inputs.frameworks}}
+      options: ${{inputs.build-options}}
+      cache: ${{inputs.build-cache}}
