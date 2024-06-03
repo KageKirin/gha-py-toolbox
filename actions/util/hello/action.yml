@@ -1,0 +1,31 @@
+name: Hello
+description: >-
+  A very polite action.
+
+inputs:
+  message:
+    description: message to use for greeting
+    required: false
+    default: Hello
+  addressee:
+    description: who to greet
+    required: false
+    default: World
+
+runs:
+  using: composite
+  steps:
+  - id: greet
+    name: Greet ${{inputs.addressee}}
+    shell: python
+    env:
+      message: ${{inputs.message}}
+      addressee: ${{inputs.addressee}}
+    run: |
+      ## actions/util/hello/action.yml#greet
+      import os, sys
+
+      message = os.getenv("message")
+      addressee = os.getenv("addressee")
+
+      print(f"{message}, {addressee}")
