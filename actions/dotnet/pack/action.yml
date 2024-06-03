@@ -1,0 +1,168 @@
+name: .NET NuGet Pack
+description: >
+  Script to pack .NET projects
+  Requires projects to be built
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  configurations:
+    description: >
+      configuration(s) to pack for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to pack for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+  filter-packages:
+    description: >
+      optional set of regular expressions to filter out packages to not publish.
+      whitelist, i.e. only matching packages will be published.
+      empty string (default) is equivalent to /.*/ (match all)
+    required: false
+    default: ''
+
+outputs:
+  packages:
+    description: >
+      whitespace-separated list of created .nupkg files
+    value: ${{steps.get-nupkg.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - id: pack-nupkg
+    name: Pack
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      build_configurations: ${{inputs.configurations}}
+      build_frameworks: ${{inputs.frameworks}}
+      build_projects: ${{inputs.projects}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/pack/action.yml#pack-nupkg
+      import os, sys, shlex, itertools, subprocess, pprint
+      from pathlib import Path
+      from contextlib import chdir
+      from subprocess import CalledProcessError
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("build_path")))
+
+      configurations = list(str(os.getenv("build_configurations")).split())
+      frameworks = list(str(os.getenv("build_frameworks")).split())
+      options = " ".join(list(str(os.getenv("build_options")).split()))
+
+      projects = str(os.getenv("build_projects")).split()
+      projects = [
+          p
+          for p in map(lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects)
+      ]
+      projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+
+      if len(configurations) == 0:
+          configurations.append("")
+
+      if len(frameworks) == 0:
+          frameworks.append("")
+
+      if len(projects) == 0:
+          projects.append("")
+
+      res = [[p, c, f] for p in projects for c in configurations for f in frameworks]
+
+      err = 0
+      errors = {}
+      for r in res:
+          print(f"building {r[0]} {r[1]} {r[2]}")
+          project = r[0]
+          config = f"--configuration {r[1]}" if len(r[1]) > 0 else ""
+          framework = f"-p:TargetFramework={r[2]}" if len(r[2]) > 0 else ""
+          command = f"dotnet pack {options} {config} {framework} {project}"  # | tee -a pack.log"
+          print(command, flush=True)
+
+          try:
+              # pprint.pp(os.environ)
+              # errors[command] = os.waitstatus_to_exitcode(os.system(command))
+              # err += errors[command]
+              # assert errors[command] == 0
+              subprocess.run(
+                  shlex.split(command),
+                  check=True,
+                  # shell=True,
+                  stdout=sys.stdout,
+                  stderr=sys.stderr,
+              )
+          except CalledProcessError as ex:
+              print(f"ERROR: {ex.returncode} {ex}")
+              errors[command] = ex.returncode
+              err += ex.returncode  # errors accumulate
+          except AssertionError as ex:
+              print(f"ERROR: {ex}")
+
+      os.chdir(basedir)
+      print("errors overview:", errors)
+      exit(err)
+
+  - id: get-nupkg
+    name: List packaged files (nupkg)
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      build_filter: ${{inputs.filter-packages}}
+    run: |
+      ## actions/dotnet/pack/action.yml#get-nupkg
+      import os, sys, shlex, itertools, re
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(str(os.getenv("build_path"))):
+          unfiltered_packages = list(
+              set([g.as_posix() for g in Path(".").rglob("*.nupkg")])
+          )
+          print(f"found packages (unfiltered): {unfiltered_packages}")
+
+          filters = list(str(os.getenv("build_filter")).split())
+          if len(filters) == 0:
+              filters.append(".*")
+
+          packages = list()
+          for f in filters:
+              print(f'applying filter "{f}"')
+              packages.extend(filter(lambda p: re.search(f, p), unfiltered_packages))
+
+          packages = list(set(packages))
+          print(f"found packages (filtered): {packages}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f'packages={" ".join(packages)}')
+              print(f'packages={" ".join(packages)}', file=fh)
+
+          exit(0)
