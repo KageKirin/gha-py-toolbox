@@ -1,0 +1,112 @@
+name: .NET NuGet Pack
+description: >
+  Script to pack .NET projects
+  Requires projects to be built
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{ github.workspace }}
+  configurations:
+    description: >
+      configuration(s) to pack for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to pack for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+
+outputs:
+  packages:
+    description: >
+      space-separated list of created .nupkg files
+    value: ${{ steps.get-nupkg.outputs.packages }}
+
+runs:
+  using: composite
+  steps:
+  - name: Pack
+    shell: python
+    env:
+      build_path: ${{ inputs.path }}
+      build_configurations: ${{ inputs.configurations }}
+      build_frameworks: ${{ inputs.frameworks }}
+      build_projects: ${{ inputs.projects }}
+    run: |
+      import os, sys, itertools
+      from pathlib import Path
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("build_path")))
+
+      configurations = list(str(os.getenv("build_configurations")).split())
+      frameworks = list(str(os.getenv("build_frameworks")).split())
+
+      projects = str(os.getenv("build_projects")).split()
+      projects = [
+          p
+          for p in map(lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects)
+      ]
+      projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+
+      if len(configurations) == 0:
+          configurations.append("")
+
+      if len(frameworks) == 0:
+          frameworks.append("")
+
+      if len(projects) == 0:
+          projects.append("")
+
+      res = [[p, c, f] for p in projects for c in configurations for f in frameworks]
+
+      err = 0
+      for r in res:
+          print(f"building {r[0]} {r[1]} {r[2]}")
+          project = r[0]
+          config = f"--configuration {r[1]}" if len(r[1]) > 0 else ""
+          framework = f"-p:TargetFramework={r[2]}" if len(r[2]) > 0 else ""
+          command = f"dotnet pack {config} {framework} {project}"
+          print(command)
+          err = os.system(command)
+          if err != 0:
+              break
+
+      os.chdir(basedir)
+      exit(err)
+
+  - id: get-nupkg
+    name: List packaged files (nupkg)
+    shell: python
+    env:
+      build_path: ${{ inputs.path }}
+    run: |
+      import os, sys, itertools
+      from pathlib import Path
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("build_path")))
+
+      packages = list(set([g.as_posix() for g in Path(".").rglob("*.nupkg")]))
+      print(f"found packages: {packages}")
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f'packages={" ".join(packages)}', file=fh)
+
+      os.chdir(basedir)
+      exit(0)
