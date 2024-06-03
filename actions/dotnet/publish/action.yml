@@ -1,0 +1,126 @@
+name: NuGet Publish
+description: >-
+  Script to publish NuGet packages
+  Requires packages to be created beforehand.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  packages:
+    description: >-
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to all.
+    required: false
+    default: ''
+  registry:
+    description: >-
+      NuGet registry to publish on.
+      Defaults to **GitHub NuGet**.
+    required: false
+    default: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+  token:
+    description: >-
+      Authorization token for the above registry.
+      GitHub (Enterprise): requires 'packages:write' permissions.
+    required: false
+    default: ${{github.token}}
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet nuget push`
+      whitespace separated list.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: get-nupkg
+    name: Gather nupkg files
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      build_packages: ${{inputs.packages}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/publish/action.yml#get-nupkg
+      import os, sys, shlex, itertools
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("build_path")))
+
+      packages = list(str(os.getenv("build_packages")).split())
+      if len(packages) == 0:
+          packages.append("*.nupkg")
+
+      packages = [
+          p
+          for p in map(lambda f: [g.as_posix() for g in Path(".").rglob(f)], packages)
+      ]
+      packages = list(set([p for p in itertools.chain.from_iterable(packages)]))
+      print(f"found packages: {packages}")
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f'packages={" ".join(packages)}', file=fh)
+
+      os.chdir(basedir)
+      exit(0)
+
+  - name: nuget push to ${{inputs.registry}}
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      NUGET_TOKEN: ${{inputs.token}}
+      NUGET_REGISTRY: ${{inputs.registry}}
+      build_packages: ${{steps.get-nupkg.outputs.packages}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/publish/action.yml#
+      import os, sys, shlex, itertools, re, subprocess
+      from pathlib import Path
+      from contextlib import chdir
+      from subprocess import CalledProcessError
+
+      with chdir(str(os.getenv("build_path"))):
+          token = os.getenv("NUGET_TOKEN")
+          registry = os.getenv("NUGET_REGISTRY")
+          packages = os.getenv("build_packages").split()
+          options = " ".join(list(str(os.getenv("build_options")).split()))
+
+          pattern = re.compile(r"[^(\.symbols)]\.nupkg")
+          nonsymbol_packages = list(filter(lambda p: pattern.search(p), packages))
+
+          err = 0
+          errors = {}
+          for package in nonsymbol_packages:
+              command = f"dotnet nuget push {package} --api-key {token}  --source {registry}  --skip-duplicate {options}"  # | tee -a publish.log"
+              print(command, flush=True)
+
+              try:
+                  # pprint.pp(os.environ)
+                  # errors[command] = os.waitstatus_to_exitcode(os.system(command))
+                  # err += errors[command]
+                  # assert errors[command] == 0
+                  subprocess.run(
+                      shlex.split(command),
+                      check=True,
+                      # shell=True,
+                      stdout=sys.stdout,
+                      stderr=sys.stderr,
+                  )
+              except CalledProcessError as ex:
+                  print(f"ERROR: {ex.returncode} {ex}")
+                  errors[command] = ex.returncode
+                  err += ex.returncode  # errors accumulate
+              except AssertionError as ex:
+                  print(f"ERROR: {ex}")
+
+          print("errors overview:", errors)
+          exit(err)
