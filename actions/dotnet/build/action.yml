@@ -1,0 +1,87 @@
+name: .NET Build
+description: >
+  Script to build .NET Solution or Projects
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{ github.workspace }}
+  configurations:
+    description: >
+      configuration(s) to build for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to build for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: build
+    name: Build
+    shell: python
+    env:
+      build_path: ${{ inputs.path }}
+      build_configurations: ${{ inputs.configurations }}
+      build_frameworks: ${{ inputs.frameworks }}
+      build_projects: ${{ inputs.projects }}
+    run: |
+      import os, sys, itertools
+      from pathlib import Path
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("build_path")))
+
+      configurations = list(str(os.getenv("build_configurations")).split())
+      frameworks = list(str(os.getenv("build_frameworks")).split())
+
+      projects = str(os.getenv("build_projects")).split()
+      projects = [
+          p
+          for p in map(lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects)
+      ]
+      projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+
+      if len(configurations) == 0:
+          configurations.append("")
+
+      if len(frameworks) == 0:
+          frameworks.append("")
+
+      if len(projects) == 0:
+          projects.append("")
+
+      res = [[p, c, f] for p in projects for c in configurations for f in frameworks]
+
+      err = 0
+      for r in res:
+          try:
+              print(f"building {r[0]} {r[1]} {r[2]}")
+              project = r[0]
+              config = f"--configuration {r[1]}" if len(r[1]) > 0 else ""
+              framework = f"--framework {r[2]}" if len(r[2]) > 0 else ""
+              command = f"dotnet build {config} {framework} {project}"
+              print(command)
+              subprocess.check_call(command.split())
+          except CalledProcessError as ex:
+              print(f"ERROR: {ex}")
+              err = ex.returncode
+
+      os.chdir(basedir)
+      exit(err)
