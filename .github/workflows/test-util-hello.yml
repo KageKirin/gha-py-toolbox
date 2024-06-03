@@ -1,0 +1,31 @@
+name: Test util/hello action
+
+on:
+  push:
+    paths:
+    - actions/util/hello
+    - .github/workflows/test-util-hello.yml
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+    - actions/util/hello
+    - .github/workflows/test-util-hello.yml
+
+jobs:
+  test:
+    runs-on: ${{matrix.platform}}
+    strategy:
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - id: hello
+      uses: ./actions/util/hello
+    - id: good-morning
+      uses: ./actions/util/hello
+      with:
+        message: Good morning
+        addressee: Mr. Baggins
