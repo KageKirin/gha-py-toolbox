@@ -1,0 +1,155 @@
+name: .NET Build
+description: >
+  Script to build .NET Solution or Projects
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  configurations:
+    description: >
+      configuration(s) to build for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to build for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+  cache:
+    description: >
+      path(s) to cache for build artifacts.
+      empty (default): no cache
+    required: false
+    default: ''
+
+
+runs:
+  using: composite
+  steps:
+  - id: prepare-cache-hash
+    if: ${{inputs.cache != ''}}
+    name: Prepare cache hash
+    shell: python
+    env:
+      build_ref: ${{github.ref}}
+      build_base: ${{github.base_ref}}
+      build_head: ${{github.head_ref}}
+      build_sha: ${{github.sha}}
+      build_cache: ${{inputs.cache}}
+      build_path: ${{inputs.path}}
+      build_projects: ${{inputs.projects}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/build/action.yml#prepare-cache-hash
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with Path(".buildcache").open("w") as fh:
+          print(str(os.getenv("build_ref")), fh)
+          print(str(os.getenv("build_base")), fh)
+          print(str(os.getenv("build_head")), fh)
+          print(str(os.getenv("build_sha")), fh)
+          print(str(os.getenv("build_cache")), fh)
+          print(str(os.getenv("build_path")), fh)
+          print(str(os.getenv("build_configurations")), fh)
+          print(str(os.getenv("build_frameworks")), fh)
+          print(str(os.getenv("build_projects")), fh)
+          print(str(os.getenv("build_options")), fh)
+
+  - id: cache
+    if: ${{inputs.cache != ''}}
+    name: Cache artifacts
+    uses: actions/cache@v4
+    env:
+      cache-name: cache-build-artifacts
+    with:
+      path: ${{inputs.cache}}
+      key: ${{runner.os}}-build-${{env.cache-name}}-${{github.sha}}-${{hashFiles('.buildcache','**/*.csproj','**/*.props','**/*.targets')}}
+      restore-keys: |
+        ${{runner.os}}-build-${{env.cache-name}}-${{github.sha}}-${{hashFiles('.buildcache','**/*.csproj','**/*.props','**/*.targets')}}
+        ${{runner.os}}-build-${{env.cache-name}}-${{github.sha}}-
+        ${{runner.os}}-build-${{env.cache-name}}-
+        ${{runner.os}}-build-
+
+  - id: build
+    name: Build
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      build_configurations: ${{inputs.configurations}}
+      build_frameworks: ${{inputs.frameworks}}
+      build_projects: ${{inputs.projects}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/build/action.yml#build
+      import os, sys, itertools, subprocess, pprint
+      from pathlib import Path
+      from contextlib import chdir
+      from subprocess import CalledProcessError
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(str(os.getenv("build_path"))):
+          configurations = list(str(os.getenv("build_configurations")).split())
+          frameworks = list(str(os.getenv("build_frameworks")).split())
+          options = " ".join(list(str(os.getenv("build_options")).split()))
+
+          projects = str(os.getenv("build_projects")).split()
+          projects = [
+              p
+              for p in map(
+                  lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects
+              )
+          ]
+          projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+
+          if len(configurations) == 0:
+              configurations.append("")
+
+          if len(frameworks) == 0:
+              frameworks.append("")
+
+          if len(projects) == 0:
+              projects.append("")
+
+          res = [
+              [p, c, f] for p in projects for c in configurations for f in frameworks
+          ]
+
+          err = 0
+          for r in res:
+              try:
+                  print(f"building {r[0]} {r[1]} {r[2]}")
+                  project = r[0]
+                  config = f"--configuration {r[1]}" if len(r[1]) > 0 else ""
+                  framework = f"--framework {r[2]}" if len(r[2]) > 0 else ""
+                  command = f"dotnet build {options} {config} {framework} {project}"
+                  print(command, flush=True)
+                  # pprint.pp(os.environ)
+                  subprocess.check_call(command.split())
+              except CalledProcessError as ex:
+                  print(f"ERROR: {ex}")
+                  err = ex.returncode
+          exit(err)
