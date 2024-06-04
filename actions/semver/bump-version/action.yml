@@ -1,0 +1,147 @@
+name: SEMVER bump version
+description: >-
+  Bumps a semver compatible version.
+  e.g. '1.2.3-pre.2+build.4'
+
+inputs:
+  version:
+    description: >-
+      version to parse
+    required: false
+    default: 'false'
+  bump_major:
+    description: >-
+      whether to bump version major (e.g '1.2.3' -> '2.0.0')
+    required: false
+    default: 'false'
+  bump_minor:
+    description: >-
+      whether to bump version minor
+      e.g. '1.2.3' -> '1.3.0'
+    required: false
+    default: 'false'
+  bump_patch:
+    description: >-
+      whether to bump version patch
+      e.g. '1.2.3' -> '1.2.4'
+    required: false
+    default: 'false'
+  bump_prerelease:
+    description: >-
+      whether to bump version prerelease
+      e.g. '1.2.3-rc.0' -> '1.2.3-rc.1'
+    required: false
+    default: 'false'
+  set_prerelease:
+    description: >-
+      new prerelease component to set
+      e.g. '1.2.3' -> '1.2.3-rc.0'
+    required: false
+    default: ''
+  set_build:
+    description: >-
+      new build component to set
+      e.g. '1.2.3' -> '1.2.3+foobar'
+    required: false
+    default: ''
+  finalize:
+    description: >-
+      any prerelease and build metadata from the version
+      e.g. '1.2.3-rc.0+foobar' -> '1.2.3'
+    required: false
+    default: 'false'
+  numerical_limit:
+    description: >
+      Numerical limit (maximum) for a version component.
+      e.g. .NET version components can only reach a maximum of signed-16-bit-word,
+      i.e. 32767.
+      This action will automatically bump the next upper component and reset the current
+      component to 0
+      if it exceeds the numerical_limit.
+      Caveat: note that exceeding the numerical limit with the major component will
+      fail.
+    required: false
+    default: '32767'
+
+outputs:
+  version:
+    description: bumped version
+    value: ${{steps.bump-version.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        semver
+
+  - id: bump-version
+    name: Bump ${{inputs.version}}
+    shell: python
+    env:
+      inputs_version: ${{inputs.version}}
+      inputs_bump_major: ${{inputs.bump_major}}
+      inputs_bump_minor: ${{inputs.bump_minor}}
+      inputs_bump_patch: ${{inputs.bump_patch}}
+      inputs_bump_prerelease: ${{inputs.bump_prerelease}}
+      inputs_numerical_limit: ${{inputs.numerical_limit}}
+      inputs_set_prerelease: ${{inputs.set_prerelease}}
+      inputs_set_build: ${{inputs.set_build}}
+      inputs_finalize: ${{inputs.finalize}}
+    run: |
+      ## actions/semver/bump-version/action.yml#bump-version
+      import os, sys, shlex, semver
+
+      version = semver.Version.parse(os.getenv("inputs_version"))
+      print(version)
+      if version == None:
+          exit(1)
+
+      bump_major = os.getenv("inputs_bump_major")
+      bump_minor = os.getenv("inputs_bump_minor")
+      bump_patch = os.getenv("inputs_bump_patch")
+      bump_prerelease = os.getenv("inputs_bump_prerelease")
+      numerical_limit = int(os.getenv("inputs_numerical_limit"))
+      set_prerelease = os.getenv("inputs_set_prerelease")
+      set_build = os.getenv("inputs_set_build")
+      finalize = os.getenv("inputs_finalize")
+
+      if bump_major == "true":
+          version = version.bump_major()
+
+      if bump_minor == "true":
+          version = version.bump_minor()
+
+      if bump_patch == "true":
+          version = version.bump_patch()
+
+      if bump_prerelease == "true":
+          if set_prerelease:
+              version = version.bump_prerelease(set_prerelease)
+          else:
+              version = version.bump_prerelease()
+
+      if version.patch > numerical_limit:
+          version = version.bump_minor()
+          version = version.replace(patch=0)
+
+      if version.minor > numerical_limit:
+          version = version.bump_major()
+          version = version.replace(minor=0)
+
+      assert version.major <= numerical_limit
+
+      if set_prerelease:
+          version = version.replace(prerelease=set_prerelease)
+
+      if set_build:
+          version = version.replace(build=set_build)
+
+      if finalize:
+          version = version.finalize_version()
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"version={version}")
+          print(f"version={version}", file=fh)
