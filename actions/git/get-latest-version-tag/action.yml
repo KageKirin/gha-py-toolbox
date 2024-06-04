@@ -1,0 +1,111 @@
+name: GIT get latest version tag
+description: >
+  Returns the latest _version_ tag
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  tag-version-format:
+    description: Python regex to identify a tag as version and retrieve said version from said tag
+    required: false
+    default: v(\d+\.\d+\.\d+)
+
+outputs:
+  tag:
+    description: The whole unparsed tag
+    value: ${{steps.get-latest.outputs.tag}}
+  version:
+    description: The version as retrieved from parsing the tag
+    value: ${{steps.get-latest.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+
+  - id: get-latest
+    name: Get latest version tag
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      tag_version_format: ${{inputs.tag-version-format}}
+    run: |
+      ## actions/git/get-latest-version-tag/action.yml#get-latest
+      import os, sys, shlex, re, pprint, itertools
+      import pygit2
+      from pathlib import Path
+      from contextlib import chdir
+      from datetime import datetime
+      from typing import List
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      RX_REFS_TAGS = re.compile("^refs/tags/")
+
+      tag_version_format = str(os.getenv("tag_version_format"))
+      assert tag_version_format is not None
+      print("tag_version_format:", tag_version_format)
+      RX_TAG_VERSION = re.compile(tag_version_format)
+      assert RX_TAG_VERSION is not None
+      print("RX_TAG_VERSION", RX_TAG_VERSION)
+
+
+      # extend pygit2.Repository
+      ## .get_reference_commit_time()
+      def repo_get_reference_commit_time(
+          self: pygit2.Repository, tag_reference: pygit2.Reference
+      ) -> int:
+          ref_obj = self[tag_reference.resolve().target]
+          if ref_obj.type == pygit2.enums.ObjectType.TAG:
+              ref_obj = ref_obj.get_object()
+          return ref_obj.commit_time
+
+
+      pygit2.Repository.get_reference_commit_time = repo_get_reference_commit_time
+
+
+      ## .get_tag_references()
+      def repo_get_tag_references(
+          self: pygit2.Repository, sort: bool = False, reverse: bool = False
+      ) -> List[pygit2.Reference]:
+          resolved_refs = [r.resolve() for r in self.references.objects]
+          resolved_tags = [r for r in resolved_refs if RX_REFS_TAGS.match(r.name)]
+          if sort:
+              resolved_tags = sorted(
+                  resolved_tags,
+                  key=lambda r: self.get_reference_commit_time(r),
+                  reverse=reverse,
+              )
+          return resolved_tags
+
+
+      pygit2.Repository.get_tag_references = repo_get_tag_references
+      ##
+
+
+      with chdir(str(os.getenv("inputs_path"))):
+          repo = pygit2.Repository(".")
+
+          tags = repo.get_tag_references(sort=True, reverse=True)
+          tags = list(filter(lambda t: RX_TAG_VERSION.match(t.shorthand), tags))
+
+          if len(tags) > 0:
+              latest_tag = tags[0]
+              version = RX_TAG_VERSION.findall(latest_tag.shorthand)[0]
+
+              pprint.pp((latest_tag.name, latest_tag.shorthand))
+              pprint.pp(version)
+
+              with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+                  print(f"tag={latest_tag.shorthand}")
+                  print(f"tag={latest_tag.shorthand}", file=fh)
+                  print(f"version={version}")
+                  print(f"version={version}", file=fh)
+
+          exit(int(len(tags) == 0))
