@@ -1,0 +1,61 @@
+name: SEMVER parse version
+description: >-
+  Parses a semver compatible version and returns its components
+
+inputs:
+  version:
+    description: version to parse
+    required: true
+
+outputs:
+  major:
+    description: version major
+    value: ${{steps.parse-version.outputs.major}}
+  minor:
+    description: version minor
+    value: ${{steps.parse-version.outputs.minor}}
+  patch:
+    description: version patch
+    value: ${{steps.parse-version.outputs.patch}}
+  prerelease:
+    description: version prerelease
+    value: ${{steps.parse-version.outputs.prerelease}}
+  build:
+    description: version build
+    value: ${{steps.parse-version.outputs.build}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        semver
+
+  - id: parse-version
+    name: Parse ${{inputs.version}}
+    shell: python
+    env:
+      inputs_version: ${{inputs.version}}
+    run: |
+      ## actions/semver/parse-version/action.yml#parse-version
+      import os, sys, shlex, semver
+
+      version = semver.Version.parse(os.getenv("inputs_version"))
+      print(version)
+      if version == None:
+          exit(1)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"major={version.major}")
+          print(f"major={version.major}", file=fh)
+          print(f"minor={version.minor}")
+          print(f"minor={version.minor}", file=fh)
+          print(f"patch={version.patch}")
+          print(f"patch={version.patch}", file=fh)
+          print(f"prerelease={version.prerelease}")
+          print(f"prerelease={version.prerelease}", file=fh)
+          print(f"build={version.build}")
+          print(f"build={version.build}", file=fh)
