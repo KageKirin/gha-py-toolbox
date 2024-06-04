@@ -1,0 +1,62 @@
+name: .NET add NuGet registry
+description: >
+  GitHub action to add a NuGet registry
+
+inputs:
+  name:
+    description: >
+      Name/Alias of the NuGet registry to add (must be unique)
+    required: true
+  registry:
+    description: >
+      URL of the NuGet registry to add
+    required: false
+    default: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+  username:
+    description: >
+      A valid username for the given registry.
+      GitHub (Enterprise): the username (github.actor) or registry owner (default) will work.
+      Can be set to empty string for public registries.
+    required: false
+    default: ${{ github.repository_owner }}
+  token:
+    description: >
+      Token or password for the registry.
+      GitHub (Enterprise): token with "packages:read" permissions for the given registry.
+      Can be set to empty string for public registries.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+  - name: Add NuGet source ${{ inputs.registry }} with credentials
+    if: ${{ inputs.registry != 'https://api.nuget.org/v3/index.json' }}
+    shell: python
+    run: |
+      import os
+
+      err = os.system(
+          'dotnet nuget add source --username "${{ inputs.username }}" --password "${{ inputs.token }}" --store-password-in-clear-text --name ${{ inputs.name }} "${{ inputs.registry }}"'
+      )
+      exit(err)
+
+  - name: Add NuGet source ${{ inputs.registry }} without credentials
+    if: ${{ inputs.registry != 'https://api.nuget.org/v3/index.json' && (inputs.username
+      == '' || inputs.token == '') }}
+    shell: python
+    run: |
+      import os
+
+      err = os.system(
+          'dotnet nuget add source --username "${{ inputs.username }}" --password "${{ inputs.token }}" --store-password-in-clear-text --name ${{ inputs.name }} "${{ inputs.registry }}"'
+      )
+      exit(err)
+
+  - name: Verify registry addition
+    shell: python
+    run: |
+      import os
+
+      err = os.system("dotnet nuget list source")
+      exit(err)
