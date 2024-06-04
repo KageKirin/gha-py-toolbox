@@ -1,0 +1,139 @@
+name: .NET update project version
+description: >
+  Updates the Version, FileVersion and AssemblyVersion properties of C# project files.
+  Also works on props files, but requires them to be explicitly listed in inputs.projects.
+  The 4th component of FileVersion and AssemblyVersion will be filled from git information.
+  CAVEAT: when creating commits, creates one commit per updated project file.
+
+inputs:
+  path:
+    description: Path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  version:
+    description: >
+      Semver (semantic versioning) compatible version.
+      Only major, minor, patch are used.
+    required: true
+  projects:
+    description: >
+      Project(s) to update
+      Empty string (default) defers to project defaults
+      Whitespace separated list. can use glob pattern.
+      Empty string (default) defers to solution.
+    required: false
+    default: ''
+  commit-message:
+    description: >
+      Commit message template (Handlebars format).
+      Allows to create individual commits when updating the projects.
+      CAVEAT: creates one commit per updated project file.
+      Empty string (default) results in no commits.
+      Available variables are:
+      * `name`
+      * `version`
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+        semver
+        pybars3
+
+  - id: update-versions
+    name: Update project versions
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      build_version: ${{inputs.version}}
+      build_projects: ${{inputs.projects}}
+      build_commit: ${{inputs.commit-message}}
+    run: |
+      import os, sys, re, pprint, itertools, semver, subprocess
+      from pathlib import Path
+      from lxml import etree
+      import pybars
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("build_path")))
+      version = semver.Version.parse(os.getenv("build_version"))
+
+      commit_message = os.getenv("build_commit")
+      commit_template = pybars.Compiler().compile(commit_message)
+
+      projects = str(os.getenv("build_projects")).split()
+      if len(projects) == 0:
+          projects.append("*.csproj")
+
+      projects = [
+          p
+          for p in map(lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects)
+      ]
+      projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+      assert len(projects) > 0
+
+      parser = etree.XMLParser(remove_blank_text=True)
+
+      for project in projects:
+          folder = Path(project).parent
+          project_commit_count = int(
+              subprocess.check_output(
+                  ["git", "rev-list", "--all", "--count", "--", project]
+              ).decode()
+          )
+          folder_commit_count = int(
+              subprocess.check_output(
+                  ["git", "rev-list", "--all", "--count", "--", folder]
+              ).decode()
+          )
+
+          root = etree.parse(project, parser).getroot()
+
+          pnodes = root.xpath("/Project/PropertyGroup")
+          pnode = (
+              pnodes[0] if len(pnodes) else etree.SubElement(root, "PropertyGroup")
+          )
+
+          nodes = root.xpath("/Project/PropertyGroup/Version")
+          if len(nodes):
+              for node in nodes:
+                  node.text = f"{version}"
+          else:
+              node = etree.SubElement(pnode, "Version")
+              node.text = f"{version}"
+
+          nodes = root.xpath("/Project/PropertyGroup/AssemblyVersion")
+          if len(nodes):
+              for node in nodes:
+                  node.text = f"{version}.{folder_commit_count}"
+          else:
+              node = etree.SubElement(pnode, "AssemblyVersion")
+              node.text = f"{version}.{folder_commit_count}"
+
+          nodes = root.xpath("/Project/PropertyGroup/FileVersion")
+          if len(nodes):
+              for node in nodes:
+                  node.text = f"{version}.{project_commit_count}"
+          else:
+              node = etree.SubElement(pnode, "FileVersion")
+              node.text = f"{version}.{project_commit_count}"
+
+          Path(project).write_text(
+              etree.tostring(root, encoding="unicode", pretty_print=True)
+          )
+
+          if commit_message and len(commit_message):
+              message = commit_template(
+                  {"name": Path(project).name, "version": version}
+              )
+              os.system(f"git add {project}")
+              os.system(f'git commit -m "{message}"')
+
+      os.chdir(basedir)
+      exit(0)
