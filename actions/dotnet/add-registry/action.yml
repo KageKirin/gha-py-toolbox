@@ -15,7 +15,8 @@ inputs:
   username:
     description: >
       A valid username for the given registry.
-      GitHub (Enterprise): the username (github.actor) or registry owner (default) will work.
+      GitHub (Enterprise): the username (github.actor) or registry owner (default)
+      will work.
       Can be set to empty string for public registries.
     required: false
     default: ${{ github.repository_owner }}
@@ -30,33 +31,67 @@ inputs:
 runs:
   using: composite
   steps:
-  - name: Add NuGet source ${{ inputs.registry }} with credentials
-    if: ${{ inputs.registry != 'https://api.nuget.org/v3/index.json' }}
+  - name: Add NuGet source ${{ inputs.registry }}
     shell: python
+    env:
+      registry_name: ${{ inputs.name }}
+      registry_url: ${{ inputs.registry }}
+      registry_username: ${{ inputs.username }}
+      registry_password: ${{ inputs.token }}
     run: |
-      import os
+      import os, sys, subprocess, pprint
 
-      err = os.system(
-          'dotnet nuget add source --username "${{ inputs.username }}" --password "${{ inputs.token }}" --store-password-in-clear-text --name ${{ inputs.name }} "${{ inputs.registry }}"'
-      )
-      exit(err)
+      registry_name = os.getenv("registry_name")
+      registry_url = os.getenv("registry_url")
+      registry_username = os.getenv("registry_username")
+      registry_password = os.getenv("registry_password")
 
-  - name: Add NuGet source ${{ inputs.registry }} without credentials
-    if: ${{ inputs.registry != 'https://api.nuget.org/v3/index.json' && (inputs.username
-      == '' || inputs.token == '') }}
-    shell: python
-    run: |
-      import os
+      registered_registries = [
+          r
+          for r in subprocess.check_output(
+              ["dotnet", "nuget", "list", "source", "--format", "Short"]
+          )
+          .decode()
+          .split()
+          if r != "E"
+      ]
+      if registry_url in registered_registries:
+          print("skip adding already added NuGet registry")
+          exit(0)
 
-      err = os.system(
-          'dotnet nuget add source --username "${{ inputs.username }}" --password "${{ inputs.token }}" --store-password-in-clear-text --name ${{ inputs.name }} "${{ inputs.registry }}"'
-      )
-      exit(err)
+      command = ["dotnet", "nuget", "add", "source", "--name", registry_name]
 
-  - name: Verify registry addition
-    shell: python
-    run: |
-      import os
+      if registry_username and len(registry_username):
+          command += ["--username", registry_username]
 
-      err = os.system("dotnet nuget list source")
-      exit(err)
+      if registry_password and len(registry_password):
+          command += ["--password", registry_password]
+
+      if registry_username or registry_password:
+          command += ["--store-password-in-clear-text"]
+
+      command.append(f'"{registry_url}"')
+
+      cmd = " ".join(command)
+      print(cmd)
+      err = os.system(cmd)
+
+      if err:
+          exit(err)
+
+      # Verify registry addition
+      registries = [
+          r
+          for r in subprocess.check_output(
+              ["dotnet", "nuget", "list", "source", "--format", "Short"]
+          )
+          .decode()
+          .split()
+          if r != "E"
+      ]
+      pprint.pp(registries)
+
+      if registry_url in registries:
+          exit(0)
+
+      exit(1)
