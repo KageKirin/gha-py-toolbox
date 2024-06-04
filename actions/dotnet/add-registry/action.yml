@@ -1,0 +1,99 @@
+name: .NET add NuGet registry
+description: >
+  GitHub action to add a NuGet registry
+
+inputs:
+  name:
+    description: >
+      Name/Alias of the NuGet registry to add (must be unique)
+    required: true
+  registry:
+    description: >
+      URL of the NuGet registry to add
+    required: false
+    default: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+  username:
+    description: >
+      A valid username for the given registry.
+      GitHub (Enterprise): the username (github.actor) or registry owner (default)
+      will work.
+      Can be set to empty string for public registries.
+    required: false
+    default: ${{github.repository_owner}}
+  token:
+    description: >
+      Token or password for the registry.
+      GitHub (Enterprise): token with "packages:read" permissions for the given registry.
+      Can be set to empty string for public registries.
+    required: false
+    default: ${{github.token}}
+
+runs:
+  using: composite
+  steps:
+  - id: add-nuget-registry
+    name: Add NuGet source ${{inputs.registry}}
+    shell: python
+    env:
+      registry_name: ${{inputs.name}}
+      registry_url: ${{inputs.registry}}
+      registry_username: ${{inputs.username}}
+      registry_password: ${{inputs.token}}
+    run: |
+      ## actions/dotnet/add-registry/action.yml#add-nuget-registry
+      import os, sys, subprocess, pprint
+
+      registry_name = os.getenv("registry_name")
+      registry_url = os.getenv("registry_url")
+      registry_username = os.getenv("registry_username")
+      registry_password = os.getenv("registry_password")
+
+      registered_registries = [
+          r
+          for r in subprocess.check_output(
+              ["dotnet", "nuget", "list", "source", "--format", "Short"]
+          )
+          .decode()
+          .split()
+          if r != "E"
+      ]
+      if registry_url in registered_registries:
+          print("skip adding already added NuGet registry")
+          exit(0)
+
+      command = ["dotnet", "nuget", "add", "source", "--name", registry_name]
+
+      if registry_username and len(registry_username):
+          command += ["--username", registry_username]
+
+      if registry_password and len(registry_password):
+          command += ["--password", registry_password]
+
+      if registry_username or registry_password:
+          command += ["--store-password-in-clear-text"]
+
+      command.append(f'"{registry_url}"')
+
+      cmd = " ".join(command)
+      print(cmd, flush=True)
+      err = os.waitstatus_to_exitcode(os.system(cmd))
+
+      if err:
+          exit(err)
+
+      # Verify registry addition
+      registries = [
+          r
+          for r in subprocess.check_output(
+              ["dotnet", "nuget", "list", "source", "--format", "Short"]
+          )
+          .decode()
+          .split()
+          if r != "E"
+      ]
+      pprint.pp(registries)
+
+      if registry_url in registries:
+          exit(0)
+
+      exit(1)
