@@ -1,0 +1,68 @@
+name: GIT fetch tags
+description: >
+  Fetch tags with git fetch command
+  Runs `git fetch --tags`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  remote:
+    description: remote where to fetch the tags from
+    required: false
+    default: origin
+  force:
+    description: >
+      Whether to force-fetch, i.e. by adding the `--force` option.
+    required: false
+    default: false
+  prune:
+    description: >
+      Whether to prune tags, i.e. by adding the `--prune --prune-tags` options.
+    required: true
+    default: false
+
+runs:
+  using: composite
+  steps:
+  - id: fetch-tags
+    name: Fetch tags
+    shell: python
+    env:
+      fetch_path: ${{inputs.path}}
+      fetch_remote: ${{inputs.remote}}
+      fetch_force: ${{inputs.force}}
+      fetch_prune: ${{inputs.prune}}
+    run: |
+      ## actions/git/fetch-tags/action.yml#fetch-tags
+      import os, sys
+      from pathlib import Path
+      from contextlib import chdir
+
+      basedir = os.getcwd()
+      fetch_path = Path(os.getenv("fetch_path", "."))
+      fetch_remote = str(os.getenv("fetch_remote", "origin"))
+      fetch_force = str(os.getenv("fetch_force", "false"))
+      fetch_prune = str(os.getenv("fetch_prune", "false"))
+
+
+      cmd = ["git", "fetch", "--tags"]
+
+      if fetch_force and fetch_force == "true":
+          cmd += ["--force"]
+
+      if fetch_prune and fetch_prune == "true":
+          cmd += ["--prune", "--prune-tags"]
+
+      cmd += [fetch_remote]
+
+      command = " ".join(cmd)
+      print(command, flush=True)
+
+      err = -1
+      with chdir(fetch_path):
+          err = os.system(command)
+          assert err == 0
+
+      exit(err)
