@@ -1,0 +1,55 @@
+name: INSTALL via Dotnet-Tool
+description: >-
+  Installs NuGet tool packages via dotnet.
+  Requires .NET and dotnet command to be installed.
+
+inputs:
+  packages:
+    description: >
+      Packages to install.
+      Expects a whitespace-separated list, so use YAML `>`, `>-`, `|` or `|-`.
+    required: true
+  sudo:
+    description: >
+      'sudo' or 'su -u user' when required.
+      Default is empty.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: dotnet-tool-install
+    name: Install via DOTNET
+    shell: python
+    env:
+      packages: ${{inputs.packages}}
+      sudo: ${{inputs.sudo}}
+    run: |
+      ## actions/install/dotnet-tool/action.yml#dotnet-tool-install
+      import os, sys
+
+      packages = str(os.getenv("packages")).split()
+      sudo = str(os.getenv("sudo", ""))
+
+      install_cmd = ["dotnet", "tool", "install", "--global"]
+
+      if sudo and len(sudo):
+          install_cmd = sudo.split() + install_cmd
+
+      err = 0
+      for package in packages:
+          nuget = package.split("@")
+
+          if len(nuget) > 1:
+              if nuget[1] == "prerelease":
+                  nuget[1] = "--prerelease"
+              else:
+                  nuget.insert(1, ["--version", nuget[1]])
+
+          command = " ".join(install_cmd + nuget)
+          print(command, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(command))
+          assert err == 0
+
+      exit(err)
