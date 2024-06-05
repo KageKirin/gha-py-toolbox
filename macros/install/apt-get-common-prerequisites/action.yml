@@ -1,0 +1,33 @@
+name: INSTALL common prequisites via apt-get
+description: >-
+  Installs a number of common prequisite tools via apt-get.
+
+inputs:
+  sudo:
+    description: >
+      'sudo' or 'su -u user' when required.
+      Default is empty.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: apt-get-prerequisites
+    uses: kagekirin/gha-py-toolbox/actions/install/apt-get@main
+    with:
+      sudo: ${{inputs.sudo}}
+      packages: >-
+        fd-find
+        ripgrep
+        jq
+        cowsay
+        curl
+        wget
+        sed
+        dos2unix
+        coreutils
+        moreutils
+        zsh
+        apt-utils
+        build-essential
