@@ -1,0 +1,38 @@
+name: GIT commit ALL MODIFIED
+description: >
+  Git commit all modified files in a single commit.
+  Runs `git commit -am "{message}"`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  message:
+    description: >
+      Git commit message.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - id: commit-files
+    name: Commit all modified files
+    shell: python
+    env:
+      commit_path: ${{inputs.path}}
+      commit_message: ${{inputs.message}}
+    run: |
+      ## actions/git/commit-all-modified/action.yml#commit-files
+      import os, sys, shlex, itertools
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("commit_path")))
+
+      commit_message = str(os.getenv("commit_message"))
+
+      err = os.waitstatus_to_exitcode(os.system(f'git commit -am "{commit_message}"'))
+      assert err == 0
+
+      os.chdir(basedir)
+      exit(err)
