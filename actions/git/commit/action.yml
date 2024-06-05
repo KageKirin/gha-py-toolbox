@@ -1,0 +1,56 @@
+name: GIT commit
+description: >
+  Perform a git commits.
+  Runs `git add {file}` for each resolved file, followed by a single `git commit -m
+  {message}`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  files:
+    description: >
+      File(s) to stage (add) and commits.
+      Can be glob pattern(s).
+    required: true
+  message:
+    description: >
+      Git commit message.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - id: commit-files
+    name: Commit files
+    shell: python
+    env:
+      commit_path: ${{inputs.path}}
+      commit_files: ${{inputs.files}}
+      commit_message: ${{inputs.message}}
+    run: |
+      ## actions/git/commit/action.yml#commit-files
+      import os, sys, shlex, itertools
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("commit_path")))
+
+      commit_files = str(os.getenv("commit_files"))
+      commit_message = str(os.getenv("commit_message"))
+
+      files = commit_files.split()
+      files = [
+          p for p in map(lambda f: [g.as_posix() for g in Path(".").rglob(f)], files)
+      ]
+
+      err = 0
+      for file in files:
+          err = os.system(f'git add "{file}"')
+          assert err == 0
+
+      err = os.system(f'git commit -m "{commit_message}"')
+      assert err == 0
+
+      os.chdir(basedir)
+      exit(err)
