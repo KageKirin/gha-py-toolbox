@@ -1,0 +1,56 @@
+name: GIT config user
+description: >
+  Configure git user and email to allow creating commits.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  name:
+    description: >
+      Git user name passed to `git config --local user.name`
+      Defaults to GitHub (Enterprise) actor.
+    required: false
+    default: CI Bot on behalf of ${{github.actor}}
+  email:
+    description: >
+      Git user name passed to `git config --local user.email`
+      Defaults to GitHub (Enterprise) actor as noreply address.
+    required: false
+    default: ${{github.actor_id}}+${{github.actor}}@users.noreply.github.com
+
+runs:
+  using: composite
+  steps:
+  - id: config-user
+    name: Configure user
+    shell: python
+    env:
+      config_path: ${{inputs.path}}
+      config_name: ${{inputs.name}}
+      config_email: ${{inputs.email}}
+    run: |
+      ## actions/git/config-user/action.yml#config-user
+      import os, sys
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("config_path", ".")))
+
+      config_name = str(os.getenv("config_name"))
+      config_email = str(os.getenv("config_email")).lower()
+
+      err = os.waitstatus_to_exitcode(
+          os.system(f'git config --local user.name "{config_name}"')
+      )
+      assert err == 0
+
+      err = os.waitstatus_to_exitcode(
+          os.system(f"git config --local user.email {config_email}")
+      )
+      assert err == 0
+
+      os.chdir(basedir)
+      exit(err)
