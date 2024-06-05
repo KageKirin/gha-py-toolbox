@@ -1,0 +1,78 @@
+name: GH CLI auth login
+description: >
+  Authenticate to GitHub (Enterprise) instance via `gh` CLI tool.
+  Depending on the runner instance, this might be a required step to get `gh` to work
+  correctly.
+  Running this action is not required on GitHub official runners (`ubuntu-latest`,
+  `windows-latest` or `macos-latest`),
+  but as soon as you are using a custom runner or image, it might be necessary.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  hostname:
+    description: >
+      GitHub (Enterprise) instance hostname (protocol and API path get removed) to
+      authenticate against.
+    required: false
+    default: ${{github.server_url}}
+  token:
+    description: >
+      GitHub (Enterprise) authentication token.
+    required: false
+    default: ${{github.token}}
+
+runs:
+  using: composite
+  steps:
+  - id: auth-login
+    name: Log into ${{inputs.hostname}}
+    shell: python
+    env:
+      config_path: ${{inputs.path}}
+      config_hostname: ${{inputs.hostname}}
+      GH_ENTERPRISE_TOKEN: ${{inputs.token}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/ghcli/auth-login/action.yml#auth-login
+      import os, sys
+      from urllib.parse import urlparse
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("config_path")))
+
+      print(f"setting up `gh` CLI with token")
+      os.system("gh version")
+
+      ## parse hostname as URL to remove protocol and API path
+      server_url = urlparse(str(os.getenv("config_hostname")))
+      config_hostname = (
+          server_url.netloc if len(server_url.netloc) else server_url.hostname
+      )
+      assert len(config_hostname) > 0
+
+      gh_enterprise_token = str(os.getenv("GH_ENTERPRISE_TOKEN"))
+      github_token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      ## 1st attempt: login using GH_ENTERPRISE_TOKEN or GITHUB_TOKEN env vars (both are set)
+      print(
+          f"1st attempt: auth login into {config_hostname} using token environment variables"
+      )
+      cmd = f"gh auth login --hostname {config_hostname} --git-protocol ssh --skip-ssh-key --insecure-storage"
+      print(cmd, flush=True)
+      err = os.waitstatus_to_exitcode(os.system(cmd))
+
+      ## 2nd attempt: login using token forwarding
+      if err != 0:
+          print(
+              f"2nd attempt: auth login into {config_hostname} using explicit token forwarding"
+          )
+          cmd = f"echo {github_token} | gh auth login --hostname {config_hostname} --git-protocol ssh --skip-ssh-key --insecure-storage --with-token"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          assert err == 0
+
+      os.chdir(basedir)
+      exit(err)
