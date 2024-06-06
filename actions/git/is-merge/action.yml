@@ -1,0 +1,70 @@
+name: GIT is merge
+description: >
+  Checks if the provided rev is a merge commit.
+  Asserts (exits with error) if the rev does not exist.
+  Detail: this checks whether the provided rev has more than 1 parent,
+  which, by my understanding, means that it is a merge commit.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  commitish:
+    description: >
+      Commit-ish to check.
+      Defaults to HEAD.
+    required: false
+    default: HEAD
+
+outputs:
+  result:
+    description: true if the revision is a tag.
+    value: ${{steps.check-if-merge.outputs.result}}
+  message:
+    description: The retrieved commit-merge message
+    value: ${{steps.check-if-merge.outputs.message}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+
+  - id: check-if-merge
+    name: Check if the top commit is a merge
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_commitish: ${{inputs.commitish}}
+    run: |
+      ## actions/git/is-merge/action.yml#check-if-merge
+      import os, sys, shlex, pprint
+      import pygit2
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("inputs_path")))
+
+      commitish = str(os.getenv("inputs_commitish"))
+
+      repo = pygit2.Repository(".")
+
+      rev = repo.revparse_single(commitish)
+      print(rev, rev.id, rev.short_id, rev.message)
+      pprint.pp(rev.parents)
+
+      if len(rev.parents) > 1:
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"result=true")
+              print(f"result=true", file=fh)
+              print(f"message={rev.message}")
+              print(f"message={rev.message}", file=fh)
+      else:
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"result=false")
+              print(f"result=false", file=fh)
+
+      exit(0)
