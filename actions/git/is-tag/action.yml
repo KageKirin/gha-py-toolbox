@@ -1,0 +1,74 @@
+name: GIT is tag
+description: >
+  Checks if the provided rev has a tag.
+  Asserts (exits with error) if the rev does not exist.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  commitish:
+    description: >
+      Commit-ish to check.
+      Defaults to HEAD.
+    required: false
+    default: HEAD
+
+outputs:
+  result:
+    description: true if the revision is a tag.
+    value: ${{steps.check-if-tag.outputs.result}}
+  tag:
+    description: The retrieved tag
+    value: ${{steps.check-if-tag.outputs.tag}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+
+  - id: check-if-tag
+    name: Check if the top commit is a tag
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_commitish: ${{inputs.commitish}}
+    run: |
+      ## actions/git/is-tag/action.yml#check-if-tag
+      import os, sys, re, pprint
+      import pygit2
+
+      RX_REFS_TAGS = re.compile("^refs/tags/")
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("inputs_path")))
+
+      commitish = str(os.getenv("inputs_commitish"))
+
+      repo = pygit2.Repository(".")
+      rev = repo.revparse_single(commitish)
+      print(rev, rev.id, rev.short_id, rev.type_str)
+
+      resolved_refs = [r.resolve() for r in repo.references.objects]
+      resolved_tags = [r for r in resolved_refs if RX_REFS_TAGS.match(r.name)]
+      resolved_oids = [r.target for r in resolved_tags]
+
+      if rev.id in resolved_oids:
+          index = resolved_oids.index(rev.id)
+          tag = resolved_tags[index]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"result=true")
+              print(f"result=true", file=fh)
+              print(f"tag={tag.shorthand}")
+              print(f"tag={tag.shorthand}", file=fh)
+      else:
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"result=false")
+              print(f"result=false", file=fh)
+
+      exit(0)
