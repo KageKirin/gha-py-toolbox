@@ -1,0 +1,38 @@
+name: Test gh/get-repo-information action
+
+on:
+  push:
+    paths:
+    - actions/gh/get-repo-information
+    - .github/workflows/test-gh-get-repo-info.yml
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+    - actions/gh/get-repo-information
+    - .github/workflows/test-gh-get-repo-info.yml
+
+jobs:
+  test:
+    runs-on: ${{matrix.platform}}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - id: this-repo
+      uses: ./actions/gh/get-repo-information
+
+    - id: that-repo
+      uses: ./actions/gh/get-repo-information
+      with:
+        repository: KageKirin/NuGettier
+
+    - id: another-repo
+      uses: ./actions/gh/get-repo-information
+      with:
+        repository: KageKirin/Keillogs
