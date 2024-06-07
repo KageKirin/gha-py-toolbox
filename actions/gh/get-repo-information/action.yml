@@ -1,0 +1,416 @@
+name: GH get repo information
+description: >
+  Retrieves information about a given repository.
+  Retrieved data is equivalent to REST API response.
+  Refer to https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#get-a-repository
+  for more information.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format to retrieve information about
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with "contents:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+
+outputs:
+  allow_auto_merge:
+    description: retrieved allow_auto_merge
+    value: ${{steps.get-repo-info.outputs.allow_auto_merge}}
+  allow_forking:
+    description: retrieved allow_forking
+    value: ${{steps.get-repo-info.outputs.allow_forking}}
+  allow_merge_commit:
+    description: retrieved allow_merge_commit
+    value: ${{steps.get-repo-info.outputs.allow_merge_commit}}
+  allow_rebase_merge:
+    description: retrieved allow_rebase_merge
+    value: ${{steps.get-repo-info.outputs.allow_rebase_merge}}
+  allow_squash_merge:
+    description: retrieved allow_squash_merge
+    value: ${{steps.get-repo-info.outputs.allow_squash_merge}}
+  allow_update_branch:
+    description: retrieved allow_update_branch
+    value: ${{steps.get-repo-info.outputs.allow_update_branch}}
+  archived:
+    description: retrieved archived
+    value: ${{steps.get-repo-info.outputs.archived}}
+  archive_url:
+    description: retrieved archive_url
+    value: ${{steps.get-repo-info.outputs.archive_url}}
+  assignees_url:
+    description: retrieved assignees_url
+    value: ${{steps.get-repo-info.outputs.assignees_url}}
+  blobs_url:
+    description: retrieved blobs_url
+    value: ${{steps.get-repo-info.outputs.blobs_url}}
+  branches_url:
+    description: retrieved branches_url
+    value: ${{steps.get-repo-info.outputs.branches_url}}
+  clone_url:
+    description: retrieved clone_url
+    value: ${{steps.get-repo-info.outputs.clone_url}}
+  collaborators_url:
+    description: retrieved collaborators_url
+    value: ${{steps.get-repo-info.outputs.collaborators_url}}
+  comments_url:
+    description: retrieved comments_url
+    value: ${{steps.get-repo-info.outputs.comments_url}}
+  commits_url:
+    description: retrieved commits_url
+    value: ${{steps.get-repo-info.outputs.commits_url}}
+  compare_url:
+    description: retrieved compare_url
+    value: ${{steps.get-repo-info.outputs.compare_url}}
+  contents_url:
+    description: retrieved contents_url
+    value: ${{steps.get-repo-info.outputs.contents_url}}
+  contributors_url:
+    description: retrieved contributors_url
+    value: ${{steps.get-repo-info.outputs.contributors_url}}
+  created_at:
+    description: retrieved created_at
+    value: ${{steps.get-repo-info.outputs.created_at}}
+  default_branch:
+    description: retrieved default_branch
+    value: ${{steps.get-repo-info.outputs.default_branch}}
+  delete_branch_on_merge:
+    description: retrieved delete_branch_on_merge
+    value: ${{steps.get-repo-info.outputs.delete_branch_on_merge}}
+  deployments_url:
+    description: retrieved deployments_url
+    value: ${{steps.get-repo-info.outputs.deployments_url}}
+  description:
+    description: retrieved description
+    value: ${{steps.get-repo-info.outputs.description}}
+  downloads_url:
+    description: retrieved downloads_url
+    value: ${{steps.get-repo-info.outputs.downloads_url}}
+  events_url:
+    description: retrieved events_url
+    value: ${{steps.get-repo-info.outputs.events_url}}
+  fork:
+    description: retrieved fork
+    value: ${{steps.get-repo-info.outputs.fork}}
+  forks:
+    description: retrieved forks
+    value: ${{steps.get-repo-info.outputs.forks}}
+  forks_count:
+    description: retrieved forks_count
+    value: ${{steps.get-repo-info.outputs.forks_count}}
+  forks_url:
+    description: retrieved forks_url
+    value: ${{steps.get-repo-info.outputs.forks_url}}
+  full_name:
+    description: retrieved full_name
+    value: ${{steps.get-repo-info.outputs.full_name}}
+  git_commits_url:
+    description: retrieved git_commits_url
+    value: ${{steps.get-repo-info.outputs.git_commits_url}}
+  git_refs_url:
+    description: retrieved git_refs_url
+    value: ${{steps.get-repo-info.outputs.git_refs_url}}
+  git_tags_url:
+    description: retrieved git_tags_url
+    value: ${{steps.get-repo-info.outputs.git_tags_url}}
+  git_url:
+    description: retrieved git_url
+    value: ${{steps.get-repo-info.outputs.git_url}}
+  has_downloads:
+    description: retrieved has_downloads
+    value: ${{steps.get-repo-info.outputs.has_downloads}}
+  has_issues:
+    description: retrieved has_issues
+    value: ${{steps.get-repo-info.outputs.has_issues}}
+  has_pages:
+    description: retrieved has_pages
+    value: ${{steps.get-repo-info.outputs.has_pages}}
+  has_projects:
+    description: retrieved has_projects
+    value: ${{steps.get-repo-info.outputs.has_projects}}
+  has_wiki:
+    description: retrieved has_wiki
+    value: ${{steps.get-repo-info.outputs.has_wiki}}
+  homepage:
+    description: retrieved homepage
+    value: ${{steps.get-repo-info.outputs.homepage}}
+  hooks_url:
+    description: retrieved hooks_url
+    value: ${{steps.get-repo-info.outputs.hooks_url}}
+  html_url:
+    description: retrieved html_url
+    value: ${{steps.get-repo-info.outputs.html_url}}
+  id:
+    description: retrieved id
+    value: ${{steps.get-repo-info.outputs.id}}
+  is_template:
+    description: retrieved is_template
+    value: ${{steps.get-repo-info.outputs.is_template}}
+  issue_comment_url:
+    description: retrieved issue_comment_url
+    value: ${{steps.get-repo-info.outputs.issue_comment_url}}
+  issue_events_url:
+    description: retrieved issue_events_url
+    value: ${{steps.get-repo-info.outputs.issue_events_url}}
+  issues_url:
+    description: retrieved issues_url
+    value: ${{steps.get-repo-info.outputs.issues_url}}
+  keys_url:
+    description: retrieved keys_url
+    value: ${{steps.get-repo-info.outputs.keys_url}}
+  labels_url:
+    description: retrieved labels_url
+    value: ${{steps.get-repo-info.outputs.labels_url}}
+  language:
+    description: retrieved language
+    value: ${{steps.get-repo-info.outputs.language}}
+  languages_url:
+    description: retrieved languages_url
+    value: ${{steps.get-repo-info.outputs.languages_url}}
+  merge_commit_message:
+    description: retrieved merge_commit_message
+    value: ${{steps.get-repo-info.outputs.merge_commit_message}}
+  merge_commit_title:
+    description: retrieved merge_commit_title
+    value: ${{steps.get-repo-info.outputs.merge_commit_title}}
+  merges_url:
+    description: retrieved merges_url
+    value: ${{steps.get-repo-info.outputs.merges_url}}
+  milestones_url:
+    description: retrieved milestones_url
+    value: ${{steps.get-repo-info.outputs.milestones_url}}
+  mirror_url:
+    description: retrieved mirror_url
+    value: ${{steps.get-repo-info.outputs.mirror_url}}
+  name:
+    description: retrieved name
+    value: ${{steps.get-repo-info.outputs.name}}
+  network_count:
+    description: retrieved network_count
+    value: ${{steps.get-repo-info.outputs.network_count}}
+  notifications_url:
+    description: retrieved notifications_url
+    value: ${{steps.get-repo-info.outputs.notifications_url}}
+  open_issues:
+    description: retrieved open_issues
+    value: ${{steps.get-repo-info.outputs.open_issues}}
+  open_issues_count:
+    description: retrieved open_issues_count
+    value: ${{steps.get-repo-info.outputs.open_issues_count}}
+  organization:
+    description: retrieved organization
+    value: ${{steps.get-repo-info.outputs.organization}}
+  owner:
+    description: retrieved owner
+    value: ${{steps.get-repo-info.outputs.owner}}
+  parent:
+    description: retrieved parent
+    value: ${{steps.get-repo-info.outputs.parent}}
+  permissions:
+    description: retrieved permissions
+    value: ${{steps.get-repo-info.outputs.permissions}}
+  private:
+    description: retrieved private
+    value: ${{steps.get-repo-info.outputs.private}}
+  pulls_url:
+    description: retrieved pulls_url
+    value: ${{steps.get-repo-info.outputs.pulls_url}}
+  pushed_at:
+    description: retrieved pushed_at
+    value: ${{steps.get-repo-info.outputs.pushed_at}}
+  releases_url:
+    description: retrieved releases_url
+    value: ${{steps.get-repo-info.outputs.releases_url}}
+  size:
+    description: retrieved size
+    value: ${{steps.get-repo-info.outputs.size}}
+  source:
+    description: retrieved source
+    value: ${{steps.get-repo-info.outputs.source}}
+  squash_merge_commit_message:
+    description: retrieved squash_merge_commit_message
+    value: ${{steps.get-repo-info.outputs.squash_merge_commit_message}}
+  squash_merge_commit_title:
+    description: retrieved squash_merge_commit_title
+    value: ${{steps.get-repo-info.outputs.squash_merge_commit_title}}
+  ssh_url:
+    description: retrieved ssh_url
+    value: ${{steps.get-repo-info.outputs.ssh_url}}
+  stargazers_count:
+    description: retrieved stargazers_count
+    value: ${{steps.get-repo-info.outputs.stargazers_count}}
+  stargazers_url:
+    description: retrieved stargazers_url
+    value: ${{steps.get-repo-info.outputs.stargazers_url}}
+  statuses_url:
+    description: retrieved statuses_url
+    value: ${{steps.get-repo-info.outputs.statuses_url}}
+  subscribers_url:
+    description: retrieved subscribers_url
+    value: ${{steps.get-repo-info.outputs.subscribers_url}}
+  subscribers_count:
+    description: retrieved subscribers_count
+    value: ${{steps.get-repo-info.outputs.subscribers_count}}
+  subscription_url:
+    description: retrieved subscription_url
+    value: ${{steps.get-repo-info.outputs.subscription_url}}
+  svn_url:
+    description: retrieved svn_url
+    value: ${{steps.get-repo-info.outputs.svn_url}}
+  tags_url:
+    description: retrieved tags_url
+    value: ${{steps.get-repo-info.outputs.tags_url}}
+  teams_url:
+    description: retrieved teams_url
+    value: ${{steps.get-repo-info.outputs.teams_url}}
+  topics:
+    description: retrieved topics
+    value: ${{steps.get-repo-info.outputs.topics}}
+  trees_url:
+    description: retrieved trees_url
+    value: ${{steps.get-repo-info.outputs.trees_url}}
+  updated_at:
+    description: retrieved updated_at
+    value: ${{steps.get-repo-info.outputs.updated_at}}
+  web_commit_signoff_required:
+    description: retrieved web_commit_signoff_required
+    value: ${{steps.get-repo-info.outputs.web_commit_signoff_required}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: get-repo-info
+    name: Get repository information
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/gh/get-repo-information/action.yml#get-repo-info
+      import os, sys, re, pprint
+      from github import Github
+      from github import Auth
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      repository = str(os.getenv("inputs_repository"))
+      print(repository)
+      api_url = str(os.getenv("inputs_api_url"))
+      print(api_url)
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+
+      repo = gh.get_repo(repository)
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"allow_auto_merge={repo.allow_auto_merge}", file=fh)
+          print(f"allow_forking={repo.allow_forking}", file=fh)
+          print(f"allow_merge_commit={repo.allow_merge_commit}", file=fh)
+          print(f"allow_rebase_merge={repo.allow_rebase_merge}", file=fh)
+          print(f"allow_squash_merge={repo.allow_squash_merge}", file=fh)
+          print(f"allow_update_branch={repo.allow_update_branch}", file=fh)
+          print(f"archived={repo.archived}", file=fh)
+          print(f"archive_url={repo.archive_url}", file=fh)
+          print(f"assignees_url={repo.assignees_url}", file=fh)
+          print(f"blobs_url={repo.blobs_url}", file=fh)
+          print(f"branches_url={repo.branches_url}", file=fh)
+          print(f"clone_url={repo.clone_url}", file=fh)
+          print(f"collaborators_url={repo.collaborators_url}", file=fh)
+          print(f"comments_url={repo.comments_url}", file=fh)
+          print(f"commits_url={repo.commits_url}", file=fh)
+          print(f"compare_url={repo.compare_url}", file=fh)
+          print(f"contents_url={repo.contents_url}", file=fh)
+          print(f"contributors_url={repo.contributors_url}", file=fh)
+          print(f"created_at={repo.created_at}", file=fh)
+          print(f"default_branch={repo.default_branch}", file=fh)
+          print(f"delete_branch_on_merge={repo.delete_branch_on_merge}", file=fh)
+          print(f"deployments_url={repo.deployments_url}", file=fh)
+          print(f"description={repo.description}", file=fh)
+          print(f"downloads_url={repo.downloads_url}", file=fh)
+          print(f"events_url={repo.events_url}", file=fh)
+          print(f"fork={repo.fork}", file=fh)
+          print(f"forks={repo.forks}", file=fh)
+          print(f"forks_count={repo.forks_count}", file=fh)
+          print(f"forks_url={repo.forks_url}", file=fh)
+          print(f"full_name={repo.full_name}", file=fh)
+          print(f"git_commits_url={repo.git_commits_url}", file=fh)
+          print(f"git_refs_url={repo.git_refs_url}", file=fh)
+          print(f"git_tags_url={repo.git_tags_url}", file=fh)
+          print(f"git_url={repo.git_url}", file=fh)
+          print(f"has_downloads={repo.has_downloads}", file=fh)
+          print(f"has_issues={repo.has_issues}", file=fh)
+          print(f"has_pages={repo.has_pages}", file=fh)
+          print(f"has_projects={repo.has_projects}", file=fh)
+          print(f"has_wiki={repo.has_wiki}", file=fh)
+          print(f"homepage={repo.homepage}", file=fh)
+          print(f"hooks_url={repo.hooks_url}", file=fh)
+          print(f"html_url={repo.html_url}", file=fh)
+          print(f"id={repo.id}", file=fh)
+          print(f"is_template={repo.is_template}", file=fh)
+          print(f"issue_comment_url={repo.issue_comment_url}", file=fh)
+          print(f"issue_events_url={repo.issue_events_url}", file=fh)
+          print(f"issues_url={repo.issues_url}", file=fh)
+          print(f"keys_url={repo.keys_url}", file=fh)
+          print(f"labels_url={repo.labels_url}", file=fh)
+          print(f"language={repo.language}", file=fh)
+          print(f"languages_url={repo.languages_url}", file=fh)
+          print(f"merge_commit_message={repo.merge_commit_message}", file=fh)
+          print(f"merge_commit_title={repo.merge_commit_title}", file=fh)
+          print(f"merges_url={repo.merges_url}", file=fh)
+          print(f"milestones_url={repo.milestones_url}", file=fh)
+          print(f"mirror_url={repo.mirror_url}", file=fh)
+          print(f"name={repo.name}", file=fh)
+          print(f"network_count={repo.network_count}", file=fh)
+          print(f"notifications_url={repo.notifications_url}", file=fh)
+          print(f"open_issues={repo.open_issues}", file=fh)
+          print(f"open_issues_count={repo.open_issues_count}", file=fh)
+          print(f"organization={repo.organization}", file=fh)
+          print(f"owner={repo.owner}", file=fh)
+          print(f"parent={repo.parent}", file=fh)
+          print(f"permissions={repo.permissions}", file=fh)
+          print(f"private={repo.private}", file=fh)
+          print(f"pulls_url={repo.pulls_url}", file=fh)
+          print(f"pushed_at={repo.pushed_at}", file=fh)
+          print(f"releases_url={repo.releases_url}", file=fh)
+          print(f"size={repo.size}", file=fh)
+          print(f"source={repo.source}", file=fh)
+          print(
+              f"squash_merge_commit_message={repo.squash_merge_commit_message}",
+              file=fh,
+          )
+          print(
+              f"squash_merge_commit_title={repo.squash_merge_commit_title}", file=fh
+          )
+          print(f"ssh_url={repo.ssh_url}", file=fh)
+          print(f"stargazers_count={repo.stargazers_count}", file=fh)
+          print(f"stargazers_url={repo.stargazers_url}", file=fh)
+          print(f"statuses_url={repo.statuses_url}", file=fh)
+          print(f"subscribers_url={repo.subscribers_url}", file=fh)
+          print(f"subscribers_count={repo.subscribers_count}", file=fh)
+          print(f"subscription_url={repo.subscription_url}", file=fh)
+          print(f"svn_url={repo.svn_url}", file=fh)
+          print(f"tags_url={repo.tags_url}", file=fh)
+          print(f"teams_url={repo.teams_url}", file=fh)
+          print(f'topics={" ".join(repo.topics)}', file=fh)
+          print(f"trees_url={repo.trees_url}", file=fh)
+          print(f"updated_at={repo.updated_at}", file=fh)
+          print(
+              f"web_commit_signoff_required={repo.web_commit_signoff_required}",
+              file=fh,
+          )
