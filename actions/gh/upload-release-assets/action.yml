@@ -1,0 +1,94 @@
+name: GH upload release assets
+description: >
+  Uploads assets to a given release.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format where to create the release.
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with "contents:write" permissions for the given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+  tag:
+    description: >
+      The tag identifying the release the assets are to be uploaded to.
+    required: true
+  files:
+    description: >
+      Files (build artifacts) to add to release.
+      Default is empty, but doesn't make much sense for this action to be called in
+      this case.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: upload-assets
+    name: Upload release assets
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_tag: ${{inputs.tag}}
+      inputs_files: ${{inputs.files}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/gh/upload-release-assets/action.yml#upload-assets
+      import os, sys, shlex, re, pprint, itertools
+      from pathlib import Path
+      from github import Github
+      from github import Auth
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+      release_tag = str(os.getenv("inputs_tag"))
+      release_files = str(os.getenv("inputs_files")).split()
+
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      release = repo.get_release(id=release_tag)
+      pprint.pp(release)
+
+      ## resolve files
+      release_files = [
+          p
+          for p in map(
+              lambda f: [g.as_posix() for g in Path(".").rglob(f)], release_files
+          )
+      ]
+      release_files = list(
+          set([p for p in itertools.chain.from_iterable(release_files)])
+      )
+
+      ## upload assets
+      for file in release_files:
+          release.upload_asset(
+              path=file,
+              name=Path(file).name,
+          )
