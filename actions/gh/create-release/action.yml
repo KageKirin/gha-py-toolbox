@@ -1,0 +1,128 @@
+name: GH create release
+description: >
+  Creates a release on the given repository.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format where to create the release.
+    required: false
+    default: ${{ github.repository }}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{ github.api_url }}
+  token:
+    description: >
+      GitHub (Enterprise): token with "contents:write" permissions for the given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{ github.token }}
+  tag:
+    description: >
+      The name of the tag.
+      Defaults to the webhook payload `github.ref_name` of on-push-tags trigger events.
+    required: false
+    default: ${{ github.ref_name }}
+  title:
+    description: >
+      The name of the release.
+      For example, `Release v1.0.1`
+    required: true
+  body:
+    description: >
+      Text describing the contents of the tag.
+    required: false
+    default: ''
+  generate-notes:
+    description: >
+      Flag to enable automatic release note generation.
+    required: false
+    default: 'true'
+  files:
+    description: >
+      Files (build artifacts) to add to release.
+      Can be left empty
+    required: false
+    default: ''
+
+outputs:
+  id:
+    description: ID of the created Release
+    value: ${{ steps.create-release.outputs.id }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: create-release
+    name: Build
+    shell: python
+    env:
+      inputs_repository: ${{ inputs.repository }}
+      inputs_api_url: ${{ inputs.api-url }}
+      inputs_tag: ${{ inputs.tag }}
+      inputs_title: ${{ inputs.title }}
+      inputs_body: ${{ inputs.body }}
+      inputs_generate_notes: ${{ inputs.generate-notes }}
+      inputs_files: ${{ inputs.files }}
+      GITHUB_TOKEN: ${{ inputs.token }}
+    run: |
+      import os, sys, json, pprint
+      from pathlib import Path
+      from github import Github
+      from github import Auth
+
+      token = str(os.getenv("GITHUB_TOKEN"))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+      release_tag = str(os.getenv("inputs_tag"))
+      release_title = str(os.getenv("inputs_title"))
+      release_body = str(os.getenv("inputs_body"))
+      release_generate_notes = str(os.getenv("inputs_generate_notes")) == "true"
+      release_files = str(os.getenv("inputs_files")).split()
+
+
+      auth = Auth.Token(token)
+      gh = Github(auth=auth)
+      repo = gh.get_repo(repository)
+
+      release = repo.create_git_release(
+          tag=release_tag,
+          name=release_title,
+          message=release_body,
+          prerelease=False,
+          generate_release_notes=release_generate_notes,
+          # target_commitish = NotSet ##<-- only when creating new tag
+      )
+      pprint.pp(release)
+
+      ## resolve files
+      release_files = [
+          p
+          for p in map(
+              lambda f: [g.as_posix() for g in Path(".").rglob(f)], release_files
+          )
+      ]
+      release_files = list(
+          set([p for p in itertools.chain.from_iterable(release_files)])
+      )
+
+      ## upload assets
+      for file in release_files:
+          release.upload_asset(
+              path=file,
+              name=Path(file).name,
+          )
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"id={release.id}", file=fh)
