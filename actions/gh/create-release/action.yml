@@ -1,0 +1,151 @@
+name: GH create release
+description: >
+  Creates a release on the given repository.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format where to create the release.
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with "contents:write" permissions for the given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+  tag:
+    description: >
+      The name of the tag.
+      Defaults to the webhook payload `github.ref_name` of on-push-tags trigger events.
+    required: false
+    default: ${{github.ref_name}}
+  title:
+    description: >
+      The name of the release.
+      For example, `Release v1.0.1`
+    required: true
+  body:
+    description: >
+      Text describing the contents of the tag.
+    required: false
+    default: ''
+  generate-notes:
+    description: >
+      Flag to enable automatic release note generation.
+    required: false
+    default: 'true'
+  files:
+    description: >
+      Files (build artifacts) to add to release.
+      Can be left empty
+    required: false
+    default: ''
+  commitish:
+    description: >
+      Commit-ish to tag.
+      DO NOT CREATE TAG if empty
+      Default is empty.
+    required: false
+    default: ''
+  dry-run:
+    description: add --dry-run argument to perform dry-run
+    required: false
+    default: 'false'
+
+outputs:
+  id:
+    description: ID of the created Release
+    value: ${{steps.create-release.outputs.id}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: create-release
+    name: Create release
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_tag: ${{inputs.tag}}
+      inputs_title: ${{inputs.title}}
+      inputs_body: ${{inputs.body}}
+      inputs_generate_notes: ${{inputs.generate-notes}}
+      inputs_files: ${{inputs.files}}
+      inputs_token: ${{inputs.token}}
+      inputs_commitish: ${{inputs.commitish}}
+      inputs_dryrun: ${{inputs.dry-run}}
+    run: |
+      ## actions/gh/create-release/action.yml#create-release
+      import os, sys, shlex, json, pprint, itertools
+      from pathlib import Path
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+      release_tag = str(os.getenv("inputs_tag"))
+      release_title = str(os.getenv("inputs_title"))
+      release_body = str(os.getenv("inputs_body"))
+      release_generate_notes = str(os.getenv("inputs_generate_notes")) == "true"
+      release_files = str(os.getenv("inputs_files")).split()
+      release_commitish = str(os.getenv("inputs_commitish", ""))
+      release_dryrun = str(os.getenv("inputs_dryrun"))
+
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      if release_dryrun and release_dryrun != "true":
+          release = repo.create_git_release(
+              tag=release_tag,
+              name=release_title,
+              message=release_body,
+              prerelease=False,
+              generate_release_notes=release_generate_notes,
+              target_commitish=(
+                  release_commitish if len(release_commitish) > 0 else NotSet
+              ),
+          )
+          pprint.pp(release)
+
+          ## resolve files
+          release_files = [
+              p
+              for p in map(
+                  lambda f: [g.as_posix() for g in Path(".").rglob(f)], release_files
+              )
+          ]
+          release_files = list(
+              set([p for p in itertools.chain.from_iterable(release_files)])
+          )
+
+          ## upload assets
+          for file in release_files:
+              release.upload_asset(
+                  path=file,
+                  name=Path(file).name,
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"id={release.id}")
+              print(f"id={release.id}", file=fh)
