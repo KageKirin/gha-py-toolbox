@@ -1,0 +1,19 @@
+name: PIP install
+description: >
+  Installs the given PyPi packages via `pip`.
+  This action calls `pip install -r` as shell and passes the packages to install as `run` source,
+  thus working akin to a regular `pip install -r requirements.txt` call.
+
+inputs:
+  packages:
+    description: >
+      Packages to install.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: PIP install packages
+    shell: python -m pip install -r {0}
+    run: >-
+      ${{ inputs.packages }}
