@@ -1,19 +1,30 @@
 name: PIP install
 description: >
   Installs the given PyPi packages via `pip`.
-  This action calls `pip install -r` as shell and passes the packages to install as `run` source,
-  thus working akin to a regular `pip install -r requirements.txt` call.
+  This action internally calls into `pip install` as subprocess,
+  as recommended by PyPi.
+  @see: https://pip.pypa.io/en/latest/user_guide/#using-pip-from-your-program
 
 inputs:
   packages:
     description: >
       Packages to install.
+      Whitespace-separated list.
     required: true
 
 runs:
   using: composite
   steps:
-  - name: PIP install packages
-    shell: python -m pip install -r {0}
-    run: >-
-      ${{ inputs.packages }}
+  - id: pip-install
+    name: PIP install packages
+    shell: python
+    env:
+      inputs_packages: ${{inputs.packages}}
+    run: |
+      ## actions/pip/install/action.yml#pip-install
+      import os, sys, subprocess
+
+      packages = str(os.getenv("inputs_packages")).split()
+
+      err = subprocess.call([sys.executable, "-m", "pip", "install"] + packages)
+      exit(err)
