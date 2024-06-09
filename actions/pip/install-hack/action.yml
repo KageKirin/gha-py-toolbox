@@ -1,4 +1,4 @@
-name: PIP install
+name: PIP install (hack-y)
 description: >
   Installs the given PyPi packages via `pip`.
   This action calls `pip install -r` as shell and passes the packages to install as `run` source,
@@ -8,6 +8,7 @@ inputs:
   packages:
     description: >
       Packages to install.
+      Whitespace-separated list.
     required: true
 
 runs:
