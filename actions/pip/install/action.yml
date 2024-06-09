@@ -1,0 +1,28 @@
+name: PIP install
+description: >
+  Installs the given PyPi packages via `pip`.
+  This action internally calls into `pip install` as subprocess,
+  as recommended by PyPi.
+  @see: https://pip.pypa.io/en/latest/user_guide/#using-pip-from-your-program
+
+inputs:
+  packages:
+    description: >
+      Packages to install.
+      Whitespace-separated list.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: PIP install packages
+    shell: python
+    env:
+      inputs_packages: ${{ inputs.packages }}
+    run: |
+      import os, sys, subprocess
+
+      packages = str(os.getenv('inputs_packages')).split()
+
+      err = subprocess.call([sys.executable, '-m', 'pip', 'install'] + packages)
+      exit(err)
