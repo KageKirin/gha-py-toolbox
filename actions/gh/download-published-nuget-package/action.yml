@@ -1,0 +1,153 @@
+name: GH download published NUGET registry_package
+description: >
+  Downloads a published NUGET registry package.
+  This can only be called from a `on-registry_package[published]` job as below,
+  as it requires the data structure specific to `github.event.registry_package`.
+  Further, permissions must be set as below:
+
+  ```
+  on:
+    registry_package:
+      types: [published]
+
+  jobs:
+    upload:
+      permissions:
+        packages: read  #<-- access packages
+    runs-on: xxx-latest
+    steps:
+    - id: download-package
+      name: Download published package
+      uses: kagekirin/gha-py-toolbox/actions/gh/download-published-nuget-package@main
+      with:
+        registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+        token: $ {{ github.token }}
+  ```
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry_package_json:
+    description: >
+      The github.event.registry_package structure as JSON:
+
+      ```
+      registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+      ```
+    required: true
+
+outputs:
+  packages:
+    description: >
+      Filename of the downloaded package(s).
+    value: ${{steps.download-packages.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: print-json
+    name: Print JSON data
+    shell: python
+    run: |
+      ## actions/gh/download-published-nuget-package/action.yml#print-json
+      """
+      ${{inputs.registry_package_json}}
+      """
+
+  - id: download-packages
+    name: Download
+    shell: python
+    env:
+      inputs_registry_package_json: ${{inputs.registry_package_json}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/gh/download-published-nuget-package/action.yml#download-packages
+      import os, sys, json, pprint, requests, shutil
+      from urllib.parse import urlparse
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      assert token is not None
+
+      session = requests.Session()
+      session.headers["Authorization"] = f"Bearer {token}"
+
+      registry_package = json.loads(os.getenv("inputs_registry_package_json"))
+      assert registry_package is not None
+      pprint.pp(registry_package)
+
+      ecosystem = registry_package["ecosystem"]
+      assert ecosystem.lower() == "nuget"
+
+      package_type = registry_package["package_type"]
+      assert package_type.lower() == "nuget"
+
+      package_name = registry_package["name"]
+      assert package_name is not None
+      print("package_name", package_name)
+
+      package_version = registry_package["package_version"]["version"]
+      assert package_version is not None
+      assert package_version == registry_package["package_version"]["name"]
+      print("package_version", package_version)
+
+      registry_url = registry_package["registry"]["url"]
+      assert urlparse(registry_url) is not None
+
+      registry_type = registry_package["registry"]["type"]
+      assert registry_type.lower() == "nuget"
+
+      print("registry_url", registry_url)
+      if not urlparse(registry_url).scheme:
+          registry_url = f"https://{registry_url}"
+
+      headers = {"Authorization": f"Bearer {token}"}
+      registry_index_url = f"{registry_url}/index.json"
+      assert urlparse(registry_index_url) is not None
+      print("registry_index_url", registry_index_url)
+      r_index = session.get(registry_index_url, headers=headers).json()
+      # pprint.pp(r_index)
+
+      registry_package_url = f"{registry_url}/{package_name}/index.json"
+      assert urlparse(registry_package_url) is not None
+      print("registry_package_url", registry_package_url)
+      r_package = session.get(registry_package_url, headers=headers).json()
+      # pprint.pp(r_package)
+
+      registry_package_version_url = (
+          f"{registry_url}/{package_name}/{package_version}.json"
+      )
+      assert urlparse(registry_package_version_url) is not None
+      print("registry_package_version_url", registry_package_version_url)
+      r_pv = session.get(registry_package_version_url, headers=headers).json()
+      pprint.pp(r_pv)
+
+      if "error" in r_pv:
+          print(f"error: {r_pv['error']}")
+          exit(1)
+
+      package_url = r_pv["packageContent"]
+      assert urlparse(package_url) is not None
+      print("package_url", package_url)
+
+      nupkg_path = Path(Path(package_url).name)
+      print(nupkg_path)
+      r_nupkg = session.get(package_url, headers=headers, stream=True)
+
+      with nupkg_path.open("wb") as f:
+          shutil.copyfileobj(r_nupkg.raw, f)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={nupkg_path}")
+          print(f"packages={nupkg_path}", file=fh)
