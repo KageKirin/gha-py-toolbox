@@ -1,0 +1,32 @@
+name: UTIL diplay JSON object
+description: >
+  Displays a given JSON object without running any code.
+  This action is mostly intended for development, discovery and debug.
+
+inputs:
+  object:
+    description: >
+      The JSON object to display.
+      Pass data using $ {{ toJSON(data) } for GitHub objects or arrays.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Display object as comment
+    shell: python
+    run: |
+      ## actions/util/display-json-object/action.yml#
+      """
+      ${{inputs.object}}
+      """
+
+  - name: Display object in code
+    shell: python
+    env:
+      object: ${{inputs.object}}
+    run: |
+      ## actions/util/display-json-object/action.yml#
+      import os, json, pprint
+
+      pprint.pp(json.loads(os.getenv("object")))
