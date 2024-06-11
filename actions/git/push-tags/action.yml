@@ -1,0 +1,35 @@
+name: GIT push tags
+description: >
+  Push tag back to remote / branch
+  Runs `git push --tags --follow-tags origin [branch]`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  remote:
+    description: remote to push to
+    required: false
+    default: origin
+  branch:
+    description: branch to push to (default is empty)
+    required: false
+    default: ''
+  dry-run:
+    description: add --dry-run argument to perform dry-run
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+  - id: push-tags
+    name: Push tags
+    uses: kagekirin/gha-py-toolbox/actions/git/push@main
+    with:
+      path: ${{inputs.path}}
+      remote: ${{inputs.remote}}
+      branch: ${{inputs.branch}}
+      arguments: --tags --follow-tags
+      dry-run: ${{inputs.dry-run}}
