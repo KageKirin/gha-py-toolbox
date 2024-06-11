@@ -1,0 +1,74 @@
+name: GIT push
+description: >
+  Push commits back to remote / branch
+  Runs `git push origin [branch] [arguments ...]`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  remote:
+    description: remote to push to
+    required: false
+    default: origin
+  branch:
+    description: branch to push to (default is empty)
+    required: false
+    default: ''
+  arguments:
+    description: addition arguments to pass to push (e.g. --force, --force-with-lease)
+    required: false
+    default: ''
+  dry-run:
+    description: add --dry-run argument to perform dry-run
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+  - id: push
+    name: Push ${{inputs.arguments}}
+    shell: python
+    env:
+      push_path: ${{inputs.path}}
+      push_remote: ${{inputs.remote}}
+      push_branch: ${{inputs.branch}}
+      push_args: ${{inputs.arguments}}
+      push_dryrun: ${{inputs.dry-run}}
+    run: |
+      ## actions/git/push/action.yml#push
+      import os, sys
+
+      basedir = os.getcwd()
+      os.chdir(str(os.getenv("push_path")))
+
+      push_remote = str(os.getenv("push_remote"))
+      push_branch = str(os.getenv("push_branch"))
+      push_args = str(os.getenv("push_args")).split()
+      push_dryrun = str(os.getenv("push_dryrun"))
+
+      cmd = ["git", "push"]
+
+      if push_dryrun and push_dryrun == "true":
+          cmd += ["--dry-run"]
+
+      if push_args and len(push_args):
+          cmd += push_args
+
+      ## push_remote can be empty => use git default remote
+      if push_remote and len(push_remote):
+          cmd += [push_remote]
+
+      ## push_branch can be empty => use git default branch
+      if push_branch and len(push_branch):
+          cmd += [push_branch]
+
+      command = " ".join(cmd)
+      print(command)
+      err = os.waitstatus_to_exitcode(os.system(command))
+      assert err == 0
+
+      os.chdir(basedir)
+      exit(err)
