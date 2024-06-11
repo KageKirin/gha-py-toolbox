@@ -1,0 +1,77 @@
+name: .NET Bump Version Tag
+description: >-
+  Macro to build, pack and publish NuGet packages
+  (aka dotnet-bipapu).
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  projects:
+    description: >
+      project(s) to build
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+  commit-message:
+    description: >
+      Git commit message.
+      Version will be appended as ` <version>`. (Space + Version).
+      Empty string (default) will not create commit.
+    required: false
+    default: ''
+  tag-message:
+    description: >
+      Git tag message.
+      Empty string (default) will create lightweight tag.
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: bumped version
+    value: ${{steps.bump-version.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - id: latest-tag
+    name: Get latest version tag
+    uses: kagekirin/gha-py-toolbox/actions/git/get-latest-version-tag@main
+    with:
+      path: ${{inputs.path}}
+
+  - id: bump-version
+    name: Compute next version
+    uses: kagekirin/gha-py-toolbox/actions/semver/bump-version@main
+    with:
+      version: ${{steps.latest-tag.outputs.version}}
+      bump_patch: true
+
+  - id: update-projects
+    name: Update C# projects
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/update-project-version@main
+    with:
+      path: ${{inputs.path}}
+      version: ${{steps.bump-version.outputs.version}}
+
+  - id: commit-am
+    if: ${{ inputs.commit-message != '' }}
+    name: Commit changes
+    uses: kagekirin/gha-py-toolbox/actions/git/commit-all-modified@main
+    with:
+      path: ${{inputs.path}}
+      message: >
+        ${{inputs.commit-message}} ${{steps.bump-version.outputs.version}}
+
+  - id: tag-commit
+    if: ${{ inputs.commit-message != '' }}
+    name: Tag HEAD
+    uses: kagekirin/gha-py-toolbox/actions/git/tag@main
+    with:
+      path: ${{inputs.path}}
+      commitish: HEAD
+      message: ${{inputs.tag-message}}
+      tag: v${{steps.bump-version.outputs.version}}
