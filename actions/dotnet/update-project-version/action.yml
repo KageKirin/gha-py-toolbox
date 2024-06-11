@@ -3,6 +3,7 @@ description: >
   Updates the Version, FileVersion and AssemblyVersion properties of C# project files.
   Also works on props files, but requires them to be explicitly listed in inputs.projects.
   The 4th component of FileVersion and AssemblyVersion will be filled from git information.
+  CAVEAT: when creating commits, creates one commit per updated project file.
 
 inputs:
   path:
@@ -26,6 +27,7 @@ inputs:
     description: >
       Commit message template (Handlebars format).
       Allows to create individual commits when updating the projects.
+      CAVEAT: creates one commit per updated project file.
       Empty string (default) results in no commits.
       Available variables are:
       * `name`
