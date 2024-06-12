@@ -49,3 +49,42 @@ jobs:
 
           steps.get-index.outputs.base-url
           ${{ steps.get-index.outputs.base-url }}
+
+
+  package-index:
+    runs-on: ${{ matrix.platform }}
+    needs: index
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        source:
+        - nuget
+        - github
+        include:
+          - source: nuget
+            registry: https://api.nuget.org/v3/
+            token: NUGET_ORG_TOKEN
+          - source: github
+            registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/
+            token: GITHUB_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-package-index
+      uses: ./actions/nuget/get-package-index
+      with:
+        registry: ${{ matrix.registry }}
+        token: ${{ secrets[matrix.token] }}
+        package: keillogs ##<- a dummy package created for testing
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+        steps.get-package-index.outputs.index
+        ${{ steps.get-package-index.outputs.index }}
+        ${{ fromJSON(steps.get-package-index.outputs.index) }}
+
+        steps.get-package-index.outputs.base-url
+        ${{ steps.get-package-index.outputs.base-url }}
