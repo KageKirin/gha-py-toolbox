@@ -1,0 +1,190 @@
+name: Test JSON encoding/decoding rountrip
+
+on:
+  push:
+    paths:
+    - .github/workflows/test-json-roundtrip.yml
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+    - .github/workflows/test-json-roundtrip.yml
+
+jobs:
+  test-github-decode:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - id: pass-by-env-decode
+      if: ${{always()}}
+      name: Pass JSON through environment variable
+      shell: python
+      env:
+        github_json: ${{toJSON(github)}}
+      run: |
+        import os, sys, json, pprint
+
+        github_json_str = str(os.getenv('github_json'))
+        print("github_json_str", github_json_str)
+
+        github_json = json.loads(github_json_str)
+        pprint.pp(github_json)
+
+    - id: pass-direct-decode
+      if: ${{always()}}
+      name: Pass JSON directly into code
+      shell: python
+      run: |
+        import os, sys, json, pprint
+
+        github_json_str = r'''
+        ${{toJSON(github)}}
+        '''
+        print("github_json_str", github_json_str)
+
+        github_json = json.loads(github_json_str)
+        pprint.pp(github_json)
+
+  test-json-encode:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - id: write-string
+      if: ${{always()}}
+      name: Write STRING
+      shell: python
+      run: |
+        import os, sys, json, pprint
+
+        foobar_json = dict()
+        foobar_json["foo"] = 42
+        foobar_json["bar"] = "hoge"
+        pprint.pp(foobar_json)
+
+        foobar_json_str = json.dumps(foobar_json)
+        print("foobar_json_str", foobar_json_str)
+
+        with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+            print(f"foobar_json='{foobar_json_str}'")
+            print(f"foobar_json='{foobar_json_str}'", file=fh)
+            print(f"foobar_json_str={json.dumps(foobar_json)}")
+            print(f"foobar_json_str={json.dumps(foobar_json)}", file=fh)
+
+    - id: read-string-env
+      if: ${{always()}}
+      name: Read STRING via environment variables
+      shell: python
+      env:
+        hoge_json: ${{steps.write-string.outputs.foobar_json}}
+        hoge_json_str: ${{steps.write-string.outputs.foobar_json_str}}
+      run: |
+        import os, sys, json, pprint
+
+        hoge_json = os.getenv('hoge_json')
+        print("hoge_json", hoge_json)
+        
+        hoge_json_str = os.getenv('hoge_json_str')
+        print("hoge_json_str", hoge_json_str)
+
+    - id: read-string-direct
+      if: ${{always()}}
+      name: Read STRING directly
+      shell: python
+      run: |
+        import os, sys, json, pprint
+
+        hoge_json = ${{steps.write-string.outputs.foobar_json}}
+        print("hoge_json", hoge_json)
+        
+        hoge_json_str = '${{steps.write-string.outputs.foobar_json_str}}'
+        print("hoge_json_str", hoge_json_str)
+
+    - id: raw-string-direct
+      if: ${{always()}}
+      name: Read STRING as raw as possible
+      shell: cat {0}
+      run: |
+        steps.write-string.outputs.foobar_json
+        ${{steps.write-string.outputs.foobar_json}}
+
+        ==============================================
+
+        steps.write-string.outputs.foobar_json_str
+        ${{steps.write-string.outputs.foobar_json_str}}
+
+
+    - id: decode-string-env
+      if: ${{always()}}
+      name: Decode STRING via environment variables
+      shell: python
+      env:
+        hoge_json: ${{steps.write-string.outputs.foobar_json}}
+        hoge_json_str: ${{steps.write-string.outputs.foobar_json_str}}
+      run: |
+        import os, sys, json, pprint
+
+        hoge_json = os.getenv('hoge_json')
+        print("hoge_json", hoge_json)
+        hoge = json.loads(hoge_json.strip("'"))
+        pprint.pp(hoge)
+
+        hoge_json_str = os.getenv('hoge_json_str')
+        print("hoge_json_str", hoge_json_str)
+        hoge = json.loads(hoge_json_str)
+        pprint.pp(hoge)
+
+    - id: decode-string-direct
+      if: ${{always()}}
+      name: Decode STRING directly
+      shell: python
+      run: |
+        import os, sys, json, pprint
+
+        hoge_json = ${{steps.write-string.outputs.foobar_json}}
+        print("hoge_json", hoge_json)
+        hoge = json.loads(hoge_json)
+        pprint.pp(hoge)
+        
+        hoge_json_str = '${{steps.write-string.outputs.foobar_json_str}}'
+        print("hoge_json_str", hoge_json_str)
+        hoge = json.loads(hoge_json_str)
+        pprint.pp(hoge)
+
+    - id: decode-string-expression
+      if: ${{always()}}
+      name: Decode STRING via expressions
+      shell: cat {0}
+      run: |
+        steps.write-string.outputs.foobar_json
+        raw ${{steps.write-string.outputs.foobar_json}}
+        fromJSON ${{fromJSON(steps.write-string.outputs.foobar_json)}}
+        tofromJSON ${{toJSON(fromJSON(steps.write-string.outputs.foobar_json))}}
+        fromfromJSON ${{fromJSON(fromJSON(steps.write-string.outputs.foobar_json))}}
+        tofromfromJSON ${{toJSON(fromJSON(fromJSON(steps.write-string.outputs.foobar_json)))}}
+
+        ==============================================
+
+        steps.write-string.outputs.foobar_json_str
+        raw ${{steps.write-string.outputs.foobar_json_str}}
+        fromJSON ${{fromJSON(steps.write-string.outputs.foobar_json_str)}}
+        tofromJSON ${{toJSON(fromJSON(steps.write-string.outputs.foobar_json_str))}}
+
+    - id: access-string-expression
+      if: ${{always()}}
+      name: Access JSON via expressions
+      shell: cat {0}
+      run: |
+        steps.write-string.outputs.foobar_json
+        raw ${{steps.write-string.outputs.foobar_json}}
+        fromfromJSON ${{fromJSON(fromJSON(steps.write-string.outputs.foobar_json))}}
+        foo ${{fromJSON(fromJSON(steps.write-string.outputs.foobar_json)).foo}}
+        bar ${{fromJSON(fromJSON(steps.write-string.outputs.foobar_json)).bar}}
+
+        ==============================================
+
+        steps.write-string.outputs.foobar_json_str
+        raw ${{steps.write-string.outputs.foobar_json_str}}
+        fromJSON ${{fromJSON(steps.write-string.outputs.foobar_json_str)}}
+        foo ${{fromJSON(steps.write-string.outputs.foobar_json_str).foo}}
+        bar ${{fromJSON(steps.write-string.outputs.foobar_json_str).bar}}
