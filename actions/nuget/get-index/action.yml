@@ -1,0 +1,70 @@
+name: NUGET get index
+description: >
+  Retrieves the NUGET registry index.
+  The resturned structure indicates the different API endpoints.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, without the terminal path `index.json`.
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/
+
+outputs:
+  index:
+    description: the index structure as JSON string
+    value: ${{ steps.get-index.outputs.index }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: get-index
+    name: Download
+    shell: python
+    env:
+      inputs_registry: ${{ inputs.registry }}
+      inputs_token: ${{ inputs.token }}
+    run: |
+      import os, sys, json, pprint, requests
+      from urllib.parse import urlparse, urljoin
+
+      registry_url = urlparse(str(os.getenv("inputs_registry")))
+      print(f"registry_url: {registry_url.geturl()}")
+      assert registry_url
+
+      token = str(os.getenv("inputs_token"))
+      print(f"token: {token}")
+
+      headers = {}
+      if token and token != "":
+          headers["Authorization"] = f"Bearer {token}"
+
+      index_url = urlparse(urljoin(registry_url.geturl(), "index.json"))
+      print(f"fetching {index_url.geturl()}")
+
+      index_response = requests.get(index_url.geturl(), headers=headers)
+      print(index_response.status_code)
+      assert index_response
+      assert index_response.status_code == 200
+
+      index_data = index_response.json()
+      assert index_data
+      pprint.pp(index_data)
+      index_json = json.dumps(index_data, sort_keys=True)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"index='{index_json}'")
+          print(f"packages='{index_json}'", file=fh)
