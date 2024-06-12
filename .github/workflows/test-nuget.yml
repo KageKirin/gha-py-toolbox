@@ -1,0 +1,51 @@
+name: Test nuget actions
+
+on:
+  push:
+    paths:
+    - actions/nuget/*
+    - .github/workflows/test-nuget.yml
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+    - actions/nuget/*
+    - .github/workflows/test-nuget.yml
+
+jobs:
+  index:
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+        source:
+        - nuget
+        - github
+        include:
+          - source: nuget
+            registry: https://api.nuget.org/v3/
+            token: NUGET_ORG_TOKEN
+          - source: github
+            registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/
+            token: GITHUB_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-index
+      uses: ./actions/nuget/get-index
+      with:
+        registry: ${{ matrix.registry }}
+        token: ${{ secrets[matrix.token] }}
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+          steps.get-index.outputs.index
+          ${{ steps.get-index.outputs.index }}
+          ${{ fromJSON(steps.get-index.outputs.index) }}
+
+          steps.get-index.outputs.base-url
+          ${{ steps.get-index.outputs.base-url }}
