@@ -1,0 +1,130 @@
+name: NUGET get index
+description: >
+  Retrieves the NUGET registry index.
+  The returned structure indicates the different API endpoints.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, without the terminal path `index.json`.
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/
+
+outputs:
+  index:
+    description: >
+      JSON string of the index structure.
+      GitHub Actions cannot return objects, hence only the JSON string is possible.
+      To retrieve the object, use $ {{ fromJSON(steps.this-step.outputs.index) }}.
+      fromJSON(fromJSON()) is the correct way to retrieve the object
+
+      The `fromJSON` below transforms the escaped string into an unescaped one.
+    value: ${{ fromJSON(steps.get-index.outputs.index) }}
+  base-url:
+    description: first encountered value for "RegistrationsBaseUrl"
+    value: ${{steps.get-index.outputs.base_url}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: get-index
+    name: Get index
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      import os, sys, json, pprint, requests
+      from urllib.parse import urlparse, urljoin
+
+      session = requests.Session()
+
+      registry_url = urlparse(str(os.getenv("inputs_registry")))
+      print(f"registry_url: {registry_url.geturl()}")
+      assert registry_url
+
+      token = str(os.getenv("inputs_token"))
+      if not token:
+          token = str(os.getenv("GITHUB_TOKEN"))
+      print(f"token: {token}")
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+
+      index_url = urlparse(urljoin(registry_url.geturl(), "index.json"))
+      print(f"fetching {index_url.geturl()}")
+
+      index_response = session.get(index_url.geturl())
+      assert index_response is not None
+      print(index_response.status_code, index_response.text)
+      assert index_response.status_code == 200
+
+      index_data = index_response.json()
+      assert index_data
+      pprint.pp(index_data)
+
+      ## retrieve 'RegistrationsBaseUrl' from resources
+      resources = index_data["resources"]
+      assert resources
+      pprint.pp(resources)
+
+      base_url = urlparse(
+          list(
+              filter(
+                  lambda item: item["@type"].startswith("RegistrationsBaseUrl"),
+                  resources,
+              )
+          )[0]["@id"]
+      )
+      assert base_url
+      print(f"base_url: {base_url.geturl()}")
+      if not base_url.geturl().endswith("/"):
+          base_url = urlparse(f"{base_url.geturl()}/")
+
+      """
+        encode: `json.dumps(json.dumps())` for escaped JSON string
+          double JSON encoding transforms the raw JSON string
+          into an escaped JSON string,
+          which can be easily written to GITHUB_OUTPUT.
+
+        decode: `json.loads(json.loads())` for object from escaped JSON string
+        - to retrieve the unescaped string, we use can `json.loads()`
+          or rather the GitHub Actions expression `fromJSON()`
+        - to retrieve the actual object, we can use `json.loads()` twice, i.e. `json.loads(json.loads())`
+          or rather the GitHub Actions expression `fromJSON()` twice, i.e. `fromJSON(fromJSON())`
+      """
+
+      index_json_escaped = json.dumps(json.dumps(index_data, sort_keys=True))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"index={index_json_escaped}")
+          print(f"index={index_json_escaped}", file=fh)
+          print(f"base_url={base_url.geturl()}")
+          print(f"base_url={base_url.geturl()}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      steps.get-index.outputs.index
+      ${{steps.get-index.outputs.index}}
+      fromJSON ${{ fromJSON(steps.get-index.outputs.index) }}
+      fromJSON(fromJSON) ${{ fromJSON(fromJSON(steps.get-index.outputs.index)) }}
+
+      ===========================================
+
+      steps.get-index.outputs.base_url
+      ${{steps.get-index.outputs.base_url}}
