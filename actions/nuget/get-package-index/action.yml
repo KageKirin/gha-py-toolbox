@@ -1,0 +1,133 @@
+name: NUGET get package index
+description: >
+  Retrieves the NUGET package index.
+  The resturned structure indicates the different API endpoints.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, without the terminal path `index.json`.
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/
+  package:
+    description: >
+      Package name.
+    required: true
+
+outputs:
+  index:
+    description: the package index structure as JSON string
+    value: ${{ fromJSON(steps.get-package-index.outputs.index) }}
+  index-json:
+    description: the package index structure as JSON string
+    value: ${{ steps.get-package-index.outputs.index }}
+  base-url:
+    description: first encountered value for "RegistrationsBaseUrl"
+    value: ${{ steps.get-index.outputs.base_url }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: get-package-index
+    name: Get package index
+    shell: python
+    env:
+      inputs_registry: ${{ inputs.registry }}
+      inputs_token: ${{ inputs.token }}
+      inputs_package: ${{ inputs.package }}
+    run: |
+      import os, sys, json, pprint, requests
+      from urllib.parse import urlparse, urljoin
+
+      session = requests.Session()
+
+      registry_url = urlparse(str(os.getenv("inputs_registry")))
+      print(f"registry_url: {registry_url.geturl()}")
+      assert registry_url
+
+      token = str(os.getenv("inputs_token"))
+      print(f"token: {token}")
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+
+      index_url = urlparse(urljoin(registry_url.geturl(), "index.json"))
+      print(f"fetching {index_url.geturl()}")
+
+      index_response = session.get(index_url.geturl())
+      print(index_response.status_code)
+      assert index_response
+      assert index_response.status_code == 200
+
+      index_data = index_response.json()
+      assert index_data
+      pprint.pp(index_data)
+
+      ## retrieve 'RegistrationsBaseUrl' from resources
+      resources = index_data["resources"]
+      assert resources
+      pprint.pp(resources)
+
+      base_url = urlparse(
+          list(
+              filter(
+                  lambda item: item["@type"].startswith("RegistrationsBaseUrl"),
+                  resources,
+              )
+          )[0]["@id"]
+      )
+      assert base_url
+      print(f"base_url: {base_url.geturl()}")
+      if not base_url.geturl().endswith("/"):
+          base_url = urlparse(f"{base_url.geturl()}/")
+
+
+      package_name = str(os.getenv("inputs_package"))
+      print(f"package_name: {package_name}")
+      assert package_name
+      assert len(package_name)
+
+      package_url = urlparse(urljoin(base_url.geturl(), f"{package_name}/index.json"))
+      print(f"fetching {package_url.geturl()}")
+
+      package_response = session.get(package_url.geturl())
+      print(package_response.status_code)
+      assert package_response
+      assert package_response.status_code == 200
+
+      package_data = package_response.json()
+      assert package_data
+      pprint.pp(package_data)
+
+      package_json = json.dumps(package_data, sort_keys=True)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"index={json.dumps(package_json)}")
+          print(f"index={json.dumps(package_json)}", file=fh)
+          print(f"base_url={base_url.geturl()}")
+          print(f"base_url={base_url.geturl()}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: python
+    run: |
+      """
+      ${{ steps.get-package-index.outputs.index }}
+      """
+
+      """
+      ${{ steps.get-package-index.outputs.base_url }}
+      """
