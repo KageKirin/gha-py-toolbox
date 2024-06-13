@@ -123,3 +123,41 @@ jobs:
       run: |
         steps.get-latest-version.outputs.version
         ${{ steps.get-latest-version.outputs.version }}
+
+  package-download:
+    runs-on: ${{ matrix.platform }}
+    needs: package-version
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        version:
+        - '' #latest
+        - 0.0.35
+        source:
+        - nuget
+        - github
+        include:
+          - source: nuget
+            registry: https://api.nuget.org/v3/
+            token: NUGET_ORG_TOKEN
+          - source: github
+            registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/
+            token: GITHUB_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-package
+      uses: ./actions/nuget/get-package
+      with:
+        registry: ${{ matrix.registry }}
+        token: ${{ secrets[matrix.token] }}
+        package: keillogs ##<- a dummy package created for testing
+        version: ${{ matrix.version }}
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+        steps.get-package.outputs.packages
+        ${{ steps.get-package.outputs.packages }}

@@ -1,0 +1,170 @@
+name: NUGET get package
+description: >
+  Downloads a NuGet package.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3
+  package:
+    description: >
+      Package name
+    required: true
+  version:
+    description: >
+      Package version.
+      Empty string (default) picks latest available version.
+    required: false
+    default: ''
+
+outputs:
+  packages:
+    description: >
+      Filename of the downloaded package(s).
+    value: ${{steps.download-packages.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download-packages
+    name: Download
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+      inputs_package: ${{inputs.package}}
+      inputs_version: ${{inputs.version}}
+    run: |
+      ## actions/nuget/get-package/action.yml#download-packages
+      import os, sys, json, pprint, requests, shutil
+      from urllib.parse import urlparse, urljoin
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(os.getenv("inputs_path", ".")):
+          session = requests.Session()
+
+          registry_url = str(
+              os.getenv("inputs_registry", "https://api.nuget.org/v3/")
+          )
+          assert urlparse(registry_url) is not None
+          if not registry_url.endswith("/"):
+              registry_url = registry_url + "/"
+          print(f"registry_url: {registry_url}")
+          assert urlparse(registry_url) is not None
+
+          token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+          print(f"token: {token}")
+          if token and token != "":
+              session.headers["Authorization"] = f"Bearer {token}"
+
+          index_url = urljoin(registry_url, "index.json")
+          assert urlparse(index_url) is not None
+          print(f"fetching {index_url}")
+
+          index_response = session.get(index_url)
+          assert index_response is not None
+          print(index_response.status_code, index_response.reason)
+          assert index_response.ok
+
+          index_data = index_response.json()
+          assert index_data is not None
+          pprint.pp(index_data)
+
+          ## retrieve 'RegistrationsBaseUrl' from resources
+          resources = index_data["resources"]
+          assert resources is not None
+          pprint.pp(resources)
+
+          base_url = list(
+              filter(
+                  lambda item: item["@type"].startswith("RegistrationsBaseUrl"),
+                  resources,
+              )
+          )[0]["@id"]
+          assert urlparse(base_url) is not None
+          print(f"base_url: {base_url}")
+          if not base_url.endswith("/"):
+              base_url = f"{base_url}/"
+          assert urlparse(base_url) is not None
+
+          ## retrieve package index
+          package_name = str(os.getenv("inputs_package"))
+          print(f"package_name: {package_name}")
+          assert package_name is not None
+          assert len(package_name)
+
+          package_url = urljoin(base_url, f"{package_name}/index.json".lower())
+          assert urlparse(package_url) is not None
+          print(f"fetching {package_url}")
+
+          package_response = session.get(package_url)
+          assert package_response is not None
+          print(package_response.status_code, package_response.reason)
+          assert package_response.ok
+
+          package_data = package_response.json()
+          assert package_data is not None
+          pprint.pp(package_data)
+
+          latest_version = package_data["items"][-1]["upper"]
+          inputs_version = os.getenv("inputs_version") or latest_version
+          package_version = str(inputs_version)
+          print(f"package_version: {package_version}")
+
+          if not package_version or len(package_version) == 0:
+              package_version = latest_version
+
+          ## retrieve package at specific version
+          packageversion_url = urljoin(package_url, f"{package_version}.json".lower())
+          assert urlparse(packageversion_url) is not None
+          print(f"fetching {packageversion_url}")
+
+          packageversion_response = session.get(packageversion_url)
+          assert packageversion_response is not None
+          print(packageversion_response.status_code, packageversion_response.reason)
+          assert packageversion_response.ok
+
+          packageversion_data = packageversion_response.json()
+          assert packageversion_data is not None
+          pprint.pp(packageversion_data)
+
+          ## package content, aka the package file to download
+          packagecontent_url = packageversion_data["packageContent"]
+          assert urlparse(packagecontent_url) is not None
+          packagecontent_path = Path(Path(packagecontent_url).name)
+          print(f"fetching {packagecontent_url} into {packagecontent_path}")
+
+          packagecontent_response = session.get(packagecontent_url, stream=True)
+          assert packagecontent_response is not None
+          print(packagecontent_response.status_code, packagecontent_response.reason)
+          assert packagecontent_response.ok
+
+          with packagecontent_path.open("wb") as f:
+              shutil.copyfileobj(packagecontent_response.raw, f)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"packages={packagecontent_path}")
+              print(f"packages={packagecontent_path}", file=fh)
