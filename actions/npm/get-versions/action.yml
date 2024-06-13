@@ -1,0 +1,99 @@
+name: NPM get all package versions
+description: >
+  Retrieves a list of all available versions for a given NPM package.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for npmjs.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, without the terminal path `metadata.json`.
+      Defaults to official NPM registry.
+
+      Note: https://npm.pkg.github.com/@{owner}
+    required: false
+    default: https://registry.npmjs.org
+  package:
+    description: >
+      Package name.
+      May include the scope if the scope is part of the package name (the way it's
+      handled for regular NPM packages).
+      Note: might also require to write the package name (e.g.) `@scope/package-name`
+      as
+      either `%40scope%2Fpackage-name` or `@scope%2Fpackage-name` depending on the
+      registry server.
+
+      GitHub (Enterprise): add scope to registry URL and not to package name.
+
+      Unity/UPM: `package-name` includes the tld-scope, i.e. `tld.owner.packagename`
+
+    required: true
+
+outputs:
+  versions:
+    description: the retrieved versions as whitespace-separated values
+    value: ${{steps.get-versions.outputs.versions}}
+  lower:
+    description: the retrieved LOWER version
+    value: ${{steps.get-versions.outputs.lower}}
+  upper:
+    description: the retrieved UPPER version
+    value: ${{steps.get-versions.outputs.upper}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        semver
+
+  - id: get-package-metadata
+    name: Get package metadata
+    uses: kagekirin/gha-py-toolbox/actions/npm/get-package-metadata@main
+    with:
+      registry: ${{inputs.registry}}
+      token: ${{inputs.token}}
+      package: ${{inputs.package}}
+
+  - id: get-versions
+    name: Get versions
+    shell: python
+    env:
+      inputs_json: ${{steps.get-package-metadata.outputs.metadata}}
+    run: |
+      ## actions/npm/get-versions/action.yml#get-versions
+      import os, sys, json, pprint, semver
+      from functools import cmp_to_key
+
+      package_data = json.loads(str(os.getenv("inputs_json")))
+      package_versions = sorted(
+          package_data["versions"].keys(), key=cmp_to_key(semver.compare)
+      )
+
+      pprint.pp(package_versions)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"versions={' '.join(package_versions)}")
+          print(f"versions={' '.join(package_versions)}", file=fh)
+          print(f"lower={package_versions[0]}")
+          print(f"lower={package_versions[0]}", file=fh)
+          print(f"upper={package_versions[-1]}")
+          print(f"upper={package_versions[-1]}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/npm/get-versions/action.yml#verify-outputs
+      steps.get-versions.outputs.versions
+      ${{steps.get-versions.outputs.versions}}
+
+      versions
+      ${{steps.get-versions.outputs.lower}}
+      ${{steps.get-versions.outputs.upper}}
