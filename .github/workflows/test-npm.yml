@@ -13,7 +13,7 @@ on:
 
 jobs:
   package-metadata:
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{matrix.platform}}
     strategy:
       fail-fast: false
       matrix:
@@ -29,26 +29,26 @@ jobs:
             registry: https://registry.npmjs.org/
             token: ''
           - source: github
-            registry: https://npm.pkg.github.com/@${{ github.repository_owner }}/
+            registry: https://npm.pkg.github.com/@${{github.repository_owner}}/
             token: GH_PUBLISH_TOKEN
     steps:
     - uses: actions/checkout@v4
     - id: get-package-metadata
       uses: ./actions/npm/get-package-metadata
       with:
-        registry: ${{ matrix.registry }}
-        token: ${{ secrets[matrix.token] }}
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
         package: com.kagekirin.frozenape ##<- an actual package, but used for testing
     - name: Check JSON outputs
       shell: cat {0}
       run: |
           steps.get-package-metadata.outputs.metadata
-          ${{ steps.get-package-metadata.outputs.metadata }}
-          ${{ fromJSON(steps.get-package-metadata.outputs.metadata) }}
+          ${{steps.get-package-metadata.outputs.metadata}}
+          ${{fromJSON(steps.get-package-metadata.outputs.metadata)}}
 
 
-  package-version:
-    runs-on: ${{ matrix.platform }}
+  package-versions:
+    runs-on: ${{matrix.platform}}
     needs: package-metadata
     permissions:
       packages: read
@@ -65,25 +65,66 @@ jobs:
             registry: https://registry.npmjs.org/
             token: ''
           - source: github
-            registry: https://npm.pkg.github.com/@${{ github.repository_owner }}/
+            registry: https://npm.pkg.github.com/@${{github.repository_owner}}/
+            token: GH_PUBLISH_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-versions
+      uses: ./actions/npm/get-versions
+      with:
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
+        package: com.kagekirin.frozenape ##<- an actual package, but used for testing
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+        steps.get-versions.outputs.versions
+        ${{steps.get-versions.outputs.versions}}
+
+        steps.get-versions.outputs.lower
+        ${{steps.get-versions.outputs.lower}}
+
+        steps.get-versions.outputs.upper
+        ${{steps.get-versions.outputs.upper}}
+
+
+  package-version:
+    runs-on: ${{matrix.platform}}
+    needs: package-metadata
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        source:
+        - npmjs
+        - github
+        include:
+          - source: npmjs
+            registry: https://registry.npmjs.org/
+            token: ''
+          - source: github
+            registry: https://npm.pkg.github.com/@${{github.repository_owner}}/
             token: GH_PUBLISH_TOKEN
     steps:
     - uses: actions/checkout@v4
     - id: get-latest-version
       uses: ./actions/npm/get-latest-version
       with:
-        registry: ${{ matrix.registry }}
-        token: ${{ secrets[matrix.token] }}
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
         package: com.kagekirin.frozenape ##<- an actual package, but used for testing
     - name: Check JSON outputs
       shell: cat {0}
       run: |
         steps.get-latest-version.outputs.version
-        ${{ steps.get-latest-version.outputs.version }}
+        ${{steps.get-latest-version.outputs.version}}
 
 
   package-download:
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{matrix.platform}}
     needs: package-version
     permissions:
       packages: read
@@ -94,7 +135,7 @@ jobs:
         - ubuntu-latest
         version:
         - '' #latest
-        - '' #TODO: select fitting version later
+        - 0.1.4
         source:
         - npmjs
         - github
@@ -103,23 +144,23 @@ jobs:
             registry: https://registry.npmjs.org/
             token: ''
           - source: github
-            registry: https://npm.pkg.github.com/@${{ github.repository_owner }}/
+            registry: https://npm.pkg.github.com/@${{github.repository_owner}}/
             token: GH_PUBLISH_TOKEN
     steps:
     - uses: actions/checkout@v4
     - id: get-package
       uses: ./actions/npm/get-package
       with:
-        registry: ${{ matrix.registry }}
-        token: ${{ secrets[matrix.token] }}
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
         package: com.kagekirin.frozenape ##<- an actual package, but used for testing
-        version: ${{ matrix.version }}
+        version: ${{matrix.version}}
     - name: Check JSON outputs
       shell: cat {0}
       run: |
         steps.get-package.outputs.packages
-        ${{ steps.get-package.outputs.packages }}
+        ${{steps.get-package.outputs.packages}}
     - name: Check package data
       shell: bash
       run: |
-        tar -tvf ${{ steps.get-package.outputs.packages }}
+        tar -tvf ${{steps.get-package.outputs.packages}}
