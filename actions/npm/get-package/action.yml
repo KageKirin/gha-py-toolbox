@@ -1,0 +1,145 @@
+name: NPM get package
+description: >
+  Downloads a NPM package.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for npmjs.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, i.e. same format as package.json
+      Defaults to official NPM registry.
+
+      Note: https://npm.pkg.github.com/@{owner}
+    required: false
+    default: https://registry.npmjs.org
+  package:
+    description: >
+      Package name.
+      May include the scope if the scope is part of the package name (the way it's
+      handled for regular NPM packages).
+      Note: might also require to write the package name (e.g.) `@scope/package-name`
+      as
+      either `%40scope%2Fpackage-name` or `@scope%2Fpackage-name` depending on the
+      registry server.
+
+      GitHub (Enterprise): add scope to registry URL and not to package name.
+
+      Unity/UPM: `package-name` includes the tld-scope, i.e. `tld.owner.packagename`
+
+    required: true
+  version:
+    description: >
+      Package version.
+      Empty string (default) picks latest available version.
+    required: false
+    default: ''
+
+outputs:
+  packages:
+    description: >
+      Filename of the downloaded package(s).
+    value: ${{steps.download-packages.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download-packages
+    name: Download
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+      inputs_package: ${{inputs.package}}
+      inputs_version: ${{inputs.version}}
+    run: |
+      ## actions/npm/get-package/action.yml#download-packages
+      import os, sys, shlex, json, pprint, requests, re, shutil
+      from urllib.parse import urlparse, urljoin
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      session = requests.Session()
+
+      registry_url = str(os.getenv("inputs_registry"))
+      assert urlparse(registry_url) is not None
+      if not registry_url.endswith("/"):
+          registry_url = registry_url + "/"
+      print(f"registry_url: {registry_url}")
+      assert urlparse(registry_url) is not None
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      print(f"token: {token}")
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+      package_name = str(os.getenv("inputs_package"))
+      print(f"package_name: {package_name}")
+      assert package_name is not None
+      assert len(package_name)
+
+      package_url = urljoin(registry_url, package_name)
+      assert urlparse(package_url) is not None
+      print(f"fetching {package_url}")
+
+      package_response = session.get(package_url)
+      assert package_response is not None
+      print(package_response.status_code, package_response.reason)
+      assert package_response.ok
+
+      package_data = package_response.json()
+      assert package_data is not None
+      pprint.pp(package_data)
+
+      package_version = str(os.getenv("inputs_version"))
+      print(f"package_version: {package_version}")
+
+      ## fetch latest for empty package_version
+      if not package_version or len(package_version) == 0:
+          package_version = package_data["dist-tags"]["latest"]
+
+      latest_version = package_data["dist-tags"]["latest"]
+
+      package_version = str(os.getenv("inputs_version"))
+      if not package_version or package_version == "":
+          package_version = latest_version
+
+      print(f"package_version: {package_version}")
+
+      assert package_version in package_data["versions"]
+      packageversion_data = package_data["versions"][package_version]
+      assert packageversion_data is not None
+
+      tarball_url = packageversion_data["dist"]["tarball"]
+      assert urlparse(tarball_url) is not None
+      print(tarball_url)
+
+      tarball_pattern = re.compile(r"(\w+.*\.tgz)")
+      tarball_path = Path(Path(tarball_url).name)
+      if not tarball_pattern.match(tarball_path.name):
+          tarball_path = Path(f"{package_name}-{package_version}.tgz")
+
+
+      print(f"fetching {tarball_path} from {tarball_url}")
+      tarball_response = session.get(tarball_url, stream=True)
+      assert tarball_response is not None
+      print(tarball_response.status_code)
+      assert tarball_response.ok
+
+      with tarball_path.open("wb") as f:
+          shutil.copyfileobj(tarball_response.raw, f)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={tarball_path}")
+          print(f"packages={tarball_path}", file=fh)
