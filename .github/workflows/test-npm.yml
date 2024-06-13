@@ -47,6 +47,47 @@ jobs:
           ${{ fromJSON(steps.get-package-metadata.outputs.metadata) }}
 
 
+  package-versions:
+    runs-on: ${{ matrix.platform }}
+    needs: package-metadata
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        source:
+        - npmjs
+        - github
+        include:
+          - source: npmjs
+            registry: https://registry.npmjs.org/
+            token: ''
+          - source: github
+            registry: https://npm.pkg.github.com/@${{ github.repository_owner }}/
+            token: GH_PUBLISH_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-versions
+      uses: ./actions/npm/get-versions
+      with:
+        registry: ${{ matrix.registry }}
+        token: ${{ secrets[matrix.token] }}
+        package: com.kagekirin.frozenape ##<- an actual package, but used for testing
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+        steps.get-versions.outputs.versions
+        ${{ steps.get-versions.outputs.versions }}
+
+        steps.get-versions.outputs.lower
+        ${{ steps.get-versions.outputs.lower }}
+
+        steps.get-versions.outputs.upper
+        ${{ steps.get-versions.outputs.upper }}
+
+
   package-version:
     runs-on: ${{ matrix.platform }}
     needs: package-metadata
