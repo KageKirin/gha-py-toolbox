@@ -1,0 +1,155 @@
+name: NUGET get package
+description: >
+  Downloads a NuGet package.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry:
+    description: >
+      Registry URL from where to fetch the package, without the terminal path `index.json`.
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3
+  package:
+    description: >
+      Package name
+    required: true
+  version:
+    description: >
+      Package version.
+      Empty string (default) picks latest available version.
+    required: false
+    default: ''
+
+outputs:
+  packages:
+    description: >
+      Filename of the downloaded package(s).
+    value: ${{steps.download-packages.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download-package
+    name: Download
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+      inputs_package: ${{inputs.package}}
+      inputs_version: ${{inputs.version}}
+    run: |
+      import os, sys, json, pprint, requests, shutil
+      from urllib.parse import urlparse, urljoin
+      from pathlib import Path
+
+      session = requests.Session()
+
+      registry_url = urlparse(str(os.getenv("inputs_registry")))
+      print(f"registry_url: {registry_url.geturl()}")
+      assert registry_url
+
+      token = str(os.getenv("inputs_token"))
+      if not token:
+          token = str(os.getenv("GITHUB_TOKEN"))
+      print(f"token: {token}")
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+
+      index_url = urlparse(urljoin(registry_url.geturl(), "index.json"))
+      print(f"fetching {index_url.geturl()}")
+
+      index_response = session.get(index_url.geturl())
+      assert index_response is not None
+      print(index_response.status_code, index_response.text)
+      assert index_response.status_code == 200
+
+      index_data = index_response.json()
+      assert index_data
+      pprint.pp(index_data)
+
+      ## retrieve 'RegistrationsBaseUrl' from resources
+      resources = index_data["resources"]
+      assert resources
+      pprint.pp(resources)
+
+      base_url = urlparse(
+          list(
+              filter(
+                  lambda item: item["@type"].startswith("RegistrationsBaseUrl"),
+                  resources,
+              )
+          )[0]["@id"]
+      )
+      assert base_url
+      print(f"base_url: {base_url.geturl()}")
+      if not base_url.geturl().endswith("/"):
+          base_url = urlparse(f"{base_url.geturl()}/")
+
+      ## retrieve package index
+      package_name = str(os.getenv("inputs_package"))
+      print(f"package_name: {package_name}")
+      assert package_name
+      assert len(package_name)
+
+      package_url = urlparse(urljoin(base_url.geturl(), f"{package_name}/index.json"))
+      print(f"fetching {package_url.geturl()}")
+
+      package_response = session.get(package_url.geturl())
+      assert package_response is not None
+      print(package_response.status_code, package_response.text)
+      assert package_response.status_code == 200
+
+      package_data = package_response.json()
+      assert package_data
+      pprint.pp(package_data)
+
+      latest_version = package_data["items"][0]["upper"]
+      package_version = str(os.getenv("inputs_version"))
+      print(f"package_version: {package_version}")
+
+      if not package_version or len(package_version) == 0:
+          package_version = latest_version
+
+      ## retrieve package at specific version
+      packageversion_url = urlparse(
+          urljoin(package_url.geturl(), f"{package_version}.json")
+      )
+      print(f"fetching {packageversion_url.geturl()}")
+
+      packageversion_response = session.get(packageversion_url.geturl())
+      assert packageversion_response is not None
+      print(packageversion_response.status_code, packageversion_response.text)
+      assert packageversion_response.status_code == 200
+
+      packageversion_data = packageversion_response.json()
+      assert packageversion_data
+      pprint.pp(packageversion_data)
+
+      ## package content, aka the package file to download
+      packagecontent_url = urlparse(packageversion_data["packageContent"])
+      packagecontent_path = Path(Path(packagecontent_url.path).name)
+      print(f"fetching {packagecontent_url.geturl()} into {packagecontent_path}")
+
+      packagecontent_response = session.get(packagecontent_url.geturl(), stream=True)
+      assert packagecontent_response is not None
+      print(packagecontent_response.status_code, packagecontent_response.text)
+      assert packagecontent_response.status_code == 200
+
+      with packagecontent_path.open("wb") as f:
+          shutil.copyfileobj(packagecontent_response.raw, f)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={packagecontent_path}")
+          print(f"packages={packagecontent_path}", file=fh)
