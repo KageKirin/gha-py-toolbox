@@ -1,0 +1,75 @@
+name: NUGET get latest package version
+description: >
+  Retrieves the latest NUGET version for a given package.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  package:
+    description: >
+      Package name.
+    required: true
+
+outputs:
+  version:
+    description: the retrieved LATEST version
+    value: ${{steps.get-latest-version.outputs.version}}
+  lower:
+    description: the retrieved LOWER version
+    value: ${{ fromJSON(steps.get-package-index.outputs.index).items[0].lower }}
+  upper:
+    description: the retrieved UPPER version
+    value: ${{ fromJSON(steps.get-package-index.outputs.index).items[0].upper }}
+
+runs:
+  using: composite
+  steps:
+  - id: get-package-index
+    name: Get package index
+    uses: kagekirin/gha-py-toolbox/actions/nuget/get-package-index@main
+    with:
+      registry: ${{inputs.registry}}
+      token: ${{inputs.token}}
+      package: ${{inputs.package}}
+  - id: get-latest-version
+    name: Get latest version
+    shell: python
+    env:
+      inputs_json: ${{steps.get-package-index.outputs.index}}
+    run: |
+      ## actions/nuget/get-latest-version/action.yml#get-latest-version
+      import os, sys, shlex, json
+
+      package_data = json.loads(str(os.getenv("inputs_json")))
+      upper_version = package_data["items"][0]["upper"]
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"version={upper_version}")
+          print(f"version={upper_version}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/get-latest-version/action.yml#verify-outputs
+      steps.get-latest-version.outputs.version
+      ${{steps.get-latest-version.outputs.version}}
+
+
+      steps.get-package-index.outputs.index
+      ${{steps.get-package-index.outputs.index}}
+      ${{fromJSON(steps.get-package-index.outputs.index)}}
+
+      versions
+      ${{ fromJSON(steps.get-package-index.outputs.index).items[0].lower }}
+      ${{ fromJSON(steps.get-package-index.outputs.index).items[0].upper }}
