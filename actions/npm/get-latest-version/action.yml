@@ -1,0 +1,73 @@
+name: NPM get latest package version
+description: >
+  Retrieves the latest NPM version for a given package.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for npmjs.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, without the terminal path `metadata.json`.
+      Defaults to official NPM registry.
+
+      Note: https://npm.pkg.github.com/@{owner}
+    required: false
+    default: https://registry.npmjs.org
+  package:
+    description: >
+      Package name.
+      May include the scope if the scope is part of the package name (the way it's
+      handled for regular NPM packages).
+      Note: might also require to write the package name (e.g.) `@scope/package-name`
+      as
+      either `%40scope%2Fpackage-name` or `@scope%2Fpackage-name` depending on the
+      registry server.
+
+      GitHub (Enterprise): add scope to registry URL and not to package name.
+
+      Unity/UPM: `package-name` includes the tld-scope, i.e. `tld.owner.packagename`
+
+    required: true
+
+outputs:
+  version:
+    description: the retrieved LATEST version
+    value: ${{steps.get-latest-version.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - id: get-package-metadata
+    name: Get package metadata
+    uses: kagekirin/gha-py-toolbox/actions/npm/get-package-metadata@main
+    with:
+      registry: ${{inputs.registry}}
+      token: ${{inputs.token}}
+      package: ${{inputs.package}}
+  - id: get-latest-version
+    name: Get latest version
+    shell: python
+    env:
+      inputs_json: ${{steps.get-package-metadata.outputs.metadata}}
+    run: |
+      ## actions/npm/get-latest-version/action.yml#get-latest-version
+      import os, sys, json
+
+      package_data = json.loads(str(os.getenv("inputs_json")))
+      upper_version = package_data["dist-tags"]["latest"]
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"version={upper_version}")
+          print(f"version={upper_version}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/npm/get-latest-version/action.yml#verify-outputs
+      steps.get-latest-version.outputs.version
+      ${{steps.get-latest-version.outputs.version}}
