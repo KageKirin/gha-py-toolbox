@@ -1,0 +1,129 @@
+name: NPM get package metadata
+description: >
+  Retrieves the metadata for a given NPM package.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for npmjs.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, i.e. same format as package.json
+      Defaults to official NPM registry.
+
+      Note: https://npm.pkg.github.com/@{owner}
+    required: false
+    default: https://registry.npmjs.org
+  package:
+    description: >
+      Package name.
+      May include the scope if the scope is part of the package name (the way it's
+      handled for regular NPM packages).
+      Note: might also require to write the package name (e.g.) `@scope/package-name`
+      as
+      either `%40scope%2Fpackage-name` or `@scope%2Fpackage-name` depending on the
+      registry server.
+
+      GitHub (Enterprise): add scope to registry URL and not to package name.
+
+      Unity/UPM: `package-name` includes the tld-scope, i.e. `tld.owner.packagename`
+
+    required: true
+
+outputs:
+  metadata:
+    description: >-
+      JSON string of the package metadata structure.
+
+      GitHub Actions cannot return objects, hence only the JSON string is possible.
+      To retrieve the object, use $ {{ fromJSON(steps.this-step.outputs.metadata)
+      }}.
+      fromJSON(fromJSON()) is the correct way to retrieve the object
+
+      The `fromJSON` below transforms the escaped string into an unescaped one.
+    value: ${{fromJSON(steps.get-package-metadata.outputs.metadata)}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: get-package-metadata
+    name: Get package index
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+      inputs_package: ${{inputs.package}}
+    run: |
+      ## actions/npm/get-package-metadata/action.yml#get-package-metadata
+      import os, sys, shlex, json, pprint, requests
+      from urllib.parse import urlparse, urljoin
+
+      session = requests.Session()
+
+      registry_url = str(os.getenv("inputs_registry"))
+      assert urlparse(registry_url) is not None
+      if not registry_url.endswith("/"):
+          registry_url = registry_url + "/"
+      print(f"registry_url: {registry_url}")
+      assert urlparse(registry_url) is not None
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      print(f"token: {token}")
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+      package_name = str(os.getenv("inputs_package"))
+      print(f"package_name: {package_name}")
+      assert package_name is not None
+      assert len(package_name)
+
+      package_url = urljoin(registry_url, package_name)
+      assert urlparse(package_url) is not None
+      print(f"fetching {package_url}")
+
+      package_response = session.get(package_url)
+      assert package_response is not None
+      print(package_response.status_code, package_response.reason)
+      assert package_response.ok
+
+      package_data = package_response.json()
+      assert package_data is not None
+      pprint.pp(package_data)
+
+      """
+        encode: `json.dumps(json.dumps())` for escaped JSON string
+          double JSON encoding transforms the raw JSON string
+          into an escaped JSON string,
+          which can be easily written to GITHUB_OUTPUT.
+
+        decode: `json.loads(json.loads())` for object from escaped JSON string
+        - to retrieve the unescaped string, we use can `json.loads()`
+          or rather the GitHub Actions expression `fromJSON()`
+        - to retrieve the actual object, we can use `json.loads()` twice, i.e. `json.loads(json.loads())`
+          or rather the GitHub Actions expression `fromJSON()` twice, i.e. `fromJSON(fromJSON())`
+      """
+
+      package_json_escaped = json.dumps(json.dumps(package_data, sort_keys=True))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"metadata={package_json_escaped}")
+          print(f"metadata={package_json_escaped}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/npm/get-package-metadata/action.yml#verify-outputs
+      steps.get-package-metadata.outputs.metadata
+      ${{steps.get-package-metadata.outputs.metadata}}
+      fromJSON ${{fromJSON(steps.get-package-metadata.outputs.metadata)}}
+      fromJSON(fromJSON) ${{fromJSON(fromJSON(steps.get-package-metadata.outputs.metadata))}}
