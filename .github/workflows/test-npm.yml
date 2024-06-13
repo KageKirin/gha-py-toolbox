@@ -80,3 +80,46 @@ jobs:
       run: |
         steps.get-latest-version.outputs.version
         ${{ steps.get-latest-version.outputs.version }}
+
+
+  package-download:
+    runs-on: ${{ matrix.platform }}
+    needs: package-version
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        version:
+        - '' #latest
+        - '' #TODO: select fitting version later
+        source:
+        - npmjs
+        - github
+        include:
+          - source: npmjs
+            registry: https://registry.npmjs.org/
+            token: ''
+          - source: github
+            registry: https://npm.pkg.github.com/@${{ github.repository_owner }}/
+            token: GH_PUBLISH_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-package
+      uses: ./actions/npm/get-package
+      with:
+        registry: ${{ matrix.registry }}
+        token: ${{ secrets[matrix.token] }}
+        package: com.kagekirin.frozenape ##<- an actual package, but used for testing
+        version: ${{ matrix.version }}
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+        steps.get-package.outputs.packages
+        ${{ steps.get-package.outputs.packages }}
+    - name: Check package data
+      shell: bash
+      run: |
+        tar -tvf ${{ steps.get-package.outputs.packages }}
