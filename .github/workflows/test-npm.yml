@@ -1,0 +1,47 @@
+name: Test NPM actions
+
+on:
+  push:
+    paths:
+    - actions/npm/*
+    - .github/workflows/test-npm.yml
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+    - actions/npm/*
+    - .github/workflows/test-npm.yml
+
+jobs:
+  package-metadata:
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        ## - windows-latest ##<- breaks while displaying extended unicode emojis
+        source:
+        - npmjs
+        - github
+        include:
+          - source: npmjs
+            registry: https://registry.npmjs.org/
+            token: ''
+          - source: github
+            registry: https://npm.pkg.github.com/@${{ github.repository_owner }}/
+            token: GH_PUBLISH_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-package-metadata
+      uses: ./actions/npm/get-package-metadata
+      with:
+        registry: ${{ matrix.registry }}
+        token: ${{ secrets[matrix.token] }}
+        package: com.kagekirin.frozenape ##<- an actual package, but used for testing
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+          steps.get-package-metadata.outputs.metadata
+          ${{ steps.get-package-metadata.outputs.metadata }}
+          ${{ fromJSON(steps.get-package-metadata.outputs.metadata) }}
