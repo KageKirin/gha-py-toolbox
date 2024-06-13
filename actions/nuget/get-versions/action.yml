@@ -1,0 +1,76 @@
+name: NUGET get all package versions
+description: >
+  Retrieves a list of all available versions for a given NUGET package.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  package:
+    description: >
+      Package name.
+    required: true
+
+outputs:
+  versions:
+    description: the retrieved versions as whitespace-separated values
+    value: ${{steps.get-versions.outputs.versions}}
+  lower:
+    description: the retrieved LOWER version
+    value: ${{ fromJSON(steps.get-package-index.outputs.index).items[0].lower }}
+  upper:
+    description: the retrieved UPPER version
+    value: ${{ fromJSON(steps.get-package-index.outputs.index).items[0].upper }}
+
+runs:
+  using: composite
+  steps:
+  - id: get-package-index
+    name: Get package index
+    uses: kagekirin/gha-py-toolbox/actions/nuget/get-package-index@main
+    with:
+      registry: ${{inputs.registry}}
+      token: ${{inputs.token}}
+      package: ${{inputs.package}}
+  - id: get-versions
+    name: Get versions
+    shell: python
+    env:
+      inputs_json: ${{steps.get-package-index.outputs.index}}
+    run: |
+      ## actions/nuget/get-versions/action.yml#get-versions
+      import os, sys, json, pprint
+
+      package_data = json.loads(str(os.getenv("inputs_json")))
+      package_versions = list(
+          map(
+              lambda item: item["catalogEntry"]["version"],
+              package_data["items"][0]["items"],
+          )
+      )
+      pprint.pp(package_versions)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"versions={' '.join(package_versions)}")
+          print(f"versions={' '.join(package_versions)}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/get-versions/action.yml#verify-outputs
+      steps.get-versions.outputs.versions
+      ${{steps.get-versions.outputs.versions}}
+
+      versions
+      ${{ fromJSON(steps.get-package-index.outputs.index).items[0].lower }}
+      ${{ fromJSON(steps.get-package-index.outputs.index).items[0].upper }}
