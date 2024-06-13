@@ -1,4 +1,4 @@
-name: Test nuget actions
+name: Test NUGET actions
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
 
 jobs:
   index:
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{matrix.platform}}
     permissions:
       packages: read
     strategy:
@@ -31,28 +31,28 @@ jobs:
             registry: https://api.nuget.org/v3/
             token: NUGET_ORG_TOKEN
           - source: github
-            registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/
+            registry: https://nuget.pkg.github.com/${{github.repository_owner}}/
             token: GITHUB_TOKEN
     steps:
     - uses: actions/checkout@v4
     - id: get-index
       uses: ./actions/nuget/get-index
       with:
-        registry: ${{ matrix.registry }}
-        token: ${{ secrets[matrix.token] }}
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
     - name: Check JSON outputs
       shell: cat {0}
       run: |
           steps.get-index.outputs.index
-          ${{ steps.get-index.outputs.index }}
-          ${{ fromJSON(steps.get-index.outputs.index) }}
+          ${{steps.get-index.outputs.index}}
+          ${{fromJSON(steps.get-index.outputs.index)}}
 
           steps.get-index.outputs.base-url
-          ${{ steps.get-index.outputs.base-url }}
+          ${{steps.get-index.outputs.base-url}}
 
 
   package-index:
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{matrix.platform}}
     needs: index
     permissions:
       packages: read
@@ -69,29 +69,29 @@ jobs:
             registry: https://api.nuget.org/v3/
             token: NUGET_ORG_TOKEN
           - source: github
-            registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/
+            registry: https://nuget.pkg.github.com/${{github.repository_owner}}/
             token: GITHUB_TOKEN
     steps:
     - uses: actions/checkout@v4
     - id: get-package-index
       uses: ./actions/nuget/get-package-index
       with:
-        registry: ${{ matrix.registry }}
-        token: ${{ secrets[matrix.token] }}
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
         package: keillogs ##<- a dummy package created for testing
     - name: Check JSON outputs
       shell: cat {0}
       run: |
         steps.get-package-index.outputs.index
-        ${{ steps.get-package-index.outputs.index }}
-        ${{ fromJSON(steps.get-package-index.outputs.index) }}
+        ${{steps.get-package-index.outputs.index}}
+        ${{fromJSON(steps.get-package-index.outputs.index)}}
 
         steps.get-package-index.outputs.base-url
-        ${{ steps.get-package-index.outputs.base-url }}
+        ${{steps.get-package-index.outputs.base-url}}
 
 
-  package-version:
-    runs-on: ${{ matrix.platform }}
+  package-versions:
+    runs-on: ${{matrix.platform}}
     needs: package-index
     permissions:
       packages: read
@@ -108,24 +108,65 @@ jobs:
             registry: https://api.nuget.org/v3/
             token: NUGET_ORG_TOKEN
           - source: github
-            registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/
+            registry: https://nuget.pkg.github.com/${{github.repository_owner}}/
+            token: GITHUB_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-versions
+      uses: ./actions/nuget/get-versions
+      with:
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
+        package: keillogs ##<- a dummy package created for testing
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+        steps.get-versions.outputs.versions
+        ${{steps.get-versions.outputs.versions}}
+
+        steps.get-versions.outputs.lower
+        ${{steps.get-versions.outputs.lower}}
+
+        steps.get-versions.outputs.upper
+        ${{steps.get-versions.outputs.upper}}
+
+
+  package-version:
+    runs-on: ${{matrix.platform}}
+    needs: package-index
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        source:
+        - nuget
+        - github
+        include:
+          - source: nuget
+            registry: https://api.nuget.org/v3/
+            token: NUGET_ORG_TOKEN
+          - source: github
+            registry: https://nuget.pkg.github.com/${{github.repository_owner}}/
             token: GITHUB_TOKEN
     steps:
     - uses: actions/checkout@v4
     - id: get-latest-version
       uses: ./actions/nuget/get-latest-version
       with:
-        registry: ${{ matrix.registry }}
-        token: ${{ secrets[matrix.token] }}
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
         package: keillogs ##<- a dummy package created for testing
     - name: Check JSON outputs
       shell: cat {0}
       run: |
         steps.get-latest-version.outputs.version
-        ${{ steps.get-latest-version.outputs.version }}
+        ${{steps.get-latest-version.outputs.version}}
 
   package-download:
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{matrix.platform}}
     needs: package-version
     permissions:
       packages: read
@@ -145,19 +186,19 @@ jobs:
             registry: https://api.nuget.org/v3/
             token: NUGET_ORG_TOKEN
           - source: github
-            registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/
+            registry: https://nuget.pkg.github.com/${{github.repository_owner}}/
             token: GITHUB_TOKEN
     steps:
     - uses: actions/checkout@v4
     - id: get-package
       uses: ./actions/nuget/get-package
       with:
-        registry: ${{ matrix.registry }}
-        token: ${{ secrets[matrix.token] }}
+        registry: ${{matrix.registry}}
+        token: ${{secrets[matrix.token]}}
         package: keillogs ##<- a dummy package created for testing
-        version: ${{ matrix.version }}
+        version: ${{matrix.version}}
     - name: Check JSON outputs
       shell: cat {0}
       run: |
         steps.get-package.outputs.packages
-        ${{ steps.get-package.outputs.packages }}
+        ${{steps.get-package.outputs.packages}}
