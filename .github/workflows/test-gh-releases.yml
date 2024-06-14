@@ -73,3 +73,38 @@ jobs:
           steps.get-release.outputs.release
           ${{ steps.get-release.outputs.release }}
           ${{ fromJSON(steps.get-release.outputs.release) }}
+
+  latest-release:
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        source:
+        - keillogs
+        include:
+          - source: keillogs
+            repository: kagekirin/keillogs
+            token: GH_RELEASE_TOKEN
+            tag: v0.0.35
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-latest-release
+      uses: ./actions/gh/get-latest-release
+      with:
+        repository: ${{ matrix.repository }}
+        token: ${{ secrets[matrix.token] }}
+        tag: ${{ matrix.tag }}
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+          steps.get-latest-release.outputs.id
+          ${{ steps.get-latest-release.outputs.id }}
+
+          steps.get-latest-release.outputs.tag
+          ${{ steps.get-latest-release.outputs.tag }}
+
+          steps.get-latest-release.outputs.release
+          ${{ steps.get-latest-release.outputs.release }}
+          ${{ fromJSON(steps.get-latest-release.outputs.release) }}
