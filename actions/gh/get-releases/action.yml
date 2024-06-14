@@ -1,0 +1,90 @@
+name: GH get releases
+description: >
+  Gets the releases on the given repository.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format where to create the release.
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with "contents:write" permissions for the given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+outputs:
+  ids:
+    description: >
+      The IDs identifying the releases as whitespace-separated list.
+    value: ${{steps.get-releases.outputs.ids}}
+  tags:
+    description: >
+      The tags identifying the releases as whitespace-separated list.
+    value: ${{steps.get-releases.outputs.tags}}
+  releases:
+    description: >
+      JSON representation of the releases
+    value: ${{fromJSON(steps.get-releases.outputs.releases)}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: get-releases
+    name: Get releases
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/gh/get-releases/action.yml#get-releases
+      import os, sys, pprint, json
+      from pathlib import Path
+      from github import Github
+      from github import Auth
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      releases = repo.get_releases()
+
+      ids = [str(r.id) for r in releases]
+      pprint.pp(ids)
+
+      tags = [r.tag_name for r in releases]
+      pprint.pp(tags)
+
+      releases_json = json.dumps([r.raw_data for r in releases])
+      releases_json_escaped = json.dumps(releases_json)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"ids={' '.join(ids)}")
+          print(f"ids={' '.join(ids)}", file=fh)
+          print(f"tags={' '.join(tags)}")
+          print(f"tags={' '.join(tags)}", file=fh)
+          print(f"releases={releases_json_escaped}")
+          print(f"releases={releases_json_escaped}", file=fh)
