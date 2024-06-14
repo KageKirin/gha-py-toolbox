@@ -1,0 +1,46 @@
+name: Test GH/get-release* actions
+
+on:
+  push:
+    paths:
+    - actions/gh/*release*
+    - .github/workflows/test-gh-releases.yml
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+    - actions/gh/*release*
+    - .github/workflows/test-gh-releases.yml
+
+jobs:
+  releases:
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        source:
+        - keillogs
+        include:
+          - source: keillogs
+            repository: kagekirin/keillogs
+            token: GH_RELEASE_TOKEN
+    steps:
+    - uses: actions/checkout@v4
+    - id: get-releases
+      uses: ./actions/gh/get-releases
+      with:
+        repository: ${{ matrix.repository }}
+        token: ${{ secrets[matrix.token] }}
+    - name: Check JSON outputs
+      shell: cat {0}
+      run: |
+          steps.get-releases.outputs.ids
+          ${{ steps.get-releases.outputs.ids }}
+
+          steps.get-releases.outputs.tags
+          ${{ steps.get-releases.outputs.tags }}
+
+          steps.get-releases.outputs.releases
+          ${{ steps.get-releases.outputs.releases }}
+          ${{ fromJSON(steps.get-releases.outputs.releases) }}
