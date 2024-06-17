@@ -27,3 +27,27 @@ jobs:
       with:
         accept-license: YES
 
+
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+    - uses: actions/checkout@v4
+    - name: Configure defaults
+      uses: ./actions/upm/nugettier-config-defaults
+    - name: Configure official NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://api.nuget.org/v3/index.json
+        username: ''
+        token: ''
+    - name: Configure GitHub NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        username: ${{ github.actor }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Verify installation
+      shell: cat .netconfig.user {0}
+      run: ''
