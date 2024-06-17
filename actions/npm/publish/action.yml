@@ -1,0 +1,296 @@
+name: NPM publish
+description: >
+  Publishes a Node|Unity package via NPM.
+  This action DOES NOT RELY ON `npm` but implements the REST API call.
+  Since this is a write operation, all inputs are required.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  registry:
+    description: >
+      Registry URL from where to fetch the package, i.e. same format as package.json
+      Defaults to official NPM registry.
+
+      Note:
+        GitHub: https://npm.pkg.github.com/@{owner}
+        NPMJS: https://registry.npmjs.org
+    required: true
+    default: https://npm.pkg.github.com/@${{github.repository_owner}}
+  token:
+    description: >
+      Authentication Bearer token for registry.
+
+      GitHub (Enterprise): token with "packages:write" permissions for the given repository.
+      npmjs.org: token generated via https://www.npmjs.com/settings/{user}/tokens
+    required: true
+  package-file:
+    description: >
+      The package file (.tgz) created e.g. by running `npm pack` in a package folder.
+      File ending doesn't matter, only file path and contents do.
+    required: true
+  access:
+    description: >
+      The access-level (private or public) the published package shall have. Defaults
+      to public.
+    required: true
+    type: choice
+    options:
+    - private
+    - public
+    default: public
+
+#outputs:
+#  response:
+#    description: >-
+#      JSON string of the package creation response structure.
+#    value: ${{fromJSON(steps.publish.outputs.response)}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: publish
+    name: Publish package
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+      inputs_packagefile: ${{inputs.package-file}}
+      inputs_access: ${{inputs.access}}
+    run: |
+      ## actions/npm/publish/action.yml#publish
+      import os, sys, json, pprint, requests, tarfile, base64, hashlib
+      from urllib.parse import urlparse, urljoin
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+
+      def delete_none_or_empty_values(obj):
+          if isinstance(obj, dict):
+              for k, v in list(obj.items()):
+                  if v is None:
+                      del obj[k]
+                  elif isinstance(v, str) and len(v) == 0:
+                      del obj[k]
+                  elif isinstance(v, dict):
+                      delete_none_or_empty_values(v)
+                  elif isinstance(v, (list, tuple)):
+                      for _ in v:
+                          delete_none_or_empty_values(_)
+          elif isinstance(obj, (list, tuple)):
+              for _ in obj:
+                  delete_none_or_empty_values(_)
+          return obj
+
+
+      session = requests.Session()
+      session.headers["Content-Type"] = "application/json"
+
+      # get registry
+      inputs_registry = os.getenv("inputs_registry")
+      assert inputs_registry is not None
+      registry_url = str(inputs_registry)
+      if not registry_url.endswith("/"):
+          registry_url = registry_url + "/"
+      print(f"registry_url: {registry_url}")
+      assert urlparse(registry_url) is not None
+
+      # get token
+      inputs_token = os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", ""))
+      assert inputs_token is not None
+      token = str(inputs_token)
+      print(f"token: {token}")
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+      # get access-level
+      inputs_access = os.getenv("inputs_access", "public")
+      assert inputs_access is not None
+      access = str(inputs_access)
+      if not access or len(access) == 0:
+          access = "public"
+      assert access is not None
+      print(f"access: {access}")
+
+      inputs_path = os.getenv("inputs_path", ".")
+      assert inputs_path is not None
+      path = Path(inputs_path)
+
+      with chdir(path):
+
+          # get package file
+          inputs_packagefile = os.getenv("inputs_packagefile")
+          assert inputs_packagefile is not None
+          package_file = Path(inputs_packagefile)
+          print(f"package_file: {package_file}")
+          assert package_file is not None
+          assert package_file.exists()
+
+          tar = tarfile.open(
+              name=package_file.name, fileobj=package_file.open("rb"), mode="r:gz"
+          )
+          ## super large output possible, disabled for now
+          # pprint.pp(tar.getnames())
+
+          ## get package.json and README from package file
+          package_json_str = str(
+              tar.extractfile("package/package.json").read(), "utf-8"
+          )
+          package_json = json.loads(package_json_str)
+          package_name = package_json["name"]
+          print("package.json", package_json_str)
+
+          readme = str(tar.extractfile("package/README.md").read(), "utf-8")
+          pprint.pp(package_json)
+          print("README", readme)
+
+          # generate the metadata used for publishing
+
+          ## create attachments part from the package file itself
+
+          """
+          "_attachments": {
+              "@myscope/my-pkg-1.3.7.tgz": {
+                  "content_type": "application/octet-stream",
+                  "data": "H4sIAAAAAAAAE+1TQUvD...",
+                  "length": 354
+              }
+          }
+          """
+
+          attachments = {
+              f"{package_file.name}": {
+                  "content_type": "application/octet-stream",
+                  "data": base64.b64encode(package_file.read_bytes()).decode("ascii"),
+                  "length": package_file.stat().st_size,
+              }
+          }
+
+          ## derive the version part from package.json
+
+          """
+          "1.3.7": {
+              "_id": "@myscope/my-pkg@1.3.7",
+              "_nodeVersion": "12.18.4",
+              "_npmVersion": "6.14.6",
+              "author": {
+                  "name": "GitLab Package Registry Utility"
+              },
+              "description": "Package created by me",
+              "dist": {
+                  "integrity": "sha512-loy16p...==",
+                  "shasum": "4a9dbd94ca6093feda03d909f3d7e6bd89d9d4bf",
+                  "tarball": "https://registry.com/@myscope/my-pkg/-/@myscope/my-pkg-1.3.7.tgz"
+              },
+              "keywords": [],
+              "license": "ISC",
+              "main": "index.js",
+              "name": "@myscope/my-pkg",
+              "publishConfig": {
+                  "@myscope:registry": "https://registry.com"
+              },
+              "readme": "ERROR: No README data found!",
+              "scripts": {
+                  "test": "echo \"Error: no test specified\" && exit 1"
+              },
+              "version": "1.3.7"
+          }
+          """
+
+          version = package_json
+          version["_id"] = f'{package_json["name"]}@{package_json["version"]}'
+          version["_nodeVersion"] = "22.1.0"
+          version["_npmVersion"] = "10.7.0"
+          version["readme"] = readme
+          version["readmeFilename"] = "README.md"
+
+          ### hack: add license with non-null string to avoid removal
+          if not "license" in version or version["license"] == "":
+              version["license"] = "CC0"
+
+          ### create the version.dist part (checksums) from the package file
+
+          sha512sum = hashlib.sha512(package_file.read_bytes())
+          print("sha512sum:", sha512sum.digest())
+          sha512sum_b64 = base64.b64encode(sha512sum.digest()).decode("ascii")
+          print("sha512sum_b64:", sha512sum_b64)
+
+          sha1sum = hashlib.sha1(package_file.read_bytes())
+          sha1sum_hex = sha1sum.hexdigest()
+          print("sha1sum:", sha1sum_hex)
+
+          packagefile_url = urlparse(
+              urljoin(registry_url, f"{package_name}/-/{package_file.name}")
+          )
+
+          version["dist"] = {
+              "integrity": f"sha512-{sha512sum_b64}",
+              "shasum": sha1sum_hex,
+              "tarball": packagefile_url,
+          }
+
+          ## finally assemble everyting into the payload
+
+          payload = {
+              "_attachments": attachments,
+              "access": access,
+              "versions": {
+                  f"{package_json['version']}": version,
+              },
+              "_id": package_json["name"],
+              "description": package_json["description"],
+              "dist-tags": {"latest": package_json["version"]},
+              "name": package_json["name"],
+          }
+
+          pprint.pp(payload)
+          payload_json = json.dumps(
+              delete_none_or_empty_values(payload.copy()), indent=2, sort_keys=True
+          )
+          print("payload_json:", payload_json)
+
+          # PUT the new version in the registry
+          package_url = urljoin(registry_url, package_name)
+          assert urlparse(package_url) is not None
+          print(f"putting {package_url} on {registry_url}")
+
+          package_response = session.put(package_url, data=payload_json)
+          assert package_response is not None
+          print(package_response.status_code, package_response.reason)
+          if package_response.ok:
+              print(f"published {package_file.name} at {package_url}")
+          else:
+              print(f"failed to publish {package_file.name} at {package_url}")
+
+          response = package_response.json()
+          assert response is not None
+          pprint.pp(response)
+
+          response_json_escaped = json.dumps(json.dumps(response, sort_keys=True))
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"response={response_json_escaped}")
+              print(f"response={response_json_escaped}", file=fh)
+
+          exit(0 if package_response.ok else 1)
+
+  - id: verify-outputs
+    if: ${{ always() }}
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/npm/publish/action.yml#verify-outputs
+      steps.publish.outputs.response
+      ${{steps.publish.outputs.response}}
