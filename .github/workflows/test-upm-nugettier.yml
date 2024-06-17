@@ -1,0 +1,29 @@
+name: Test UPM NuGettier
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+        - actions/upm/nugettier*
+        - .github/workflows/test-upm-nugettier.yml
+  push:
+    paths:
+      - actions/upm/nugettier*
+      - .github/workflows/test-upm-nugettier.yml
+
+jobs:
+  install:
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./actions/upm/nugettier-install
+      with:
+        accept-license: YES
+
