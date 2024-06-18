@@ -1,0 +1,95 @@
+name: UPM NuGettier Configure using NuGet.config
+description: >
+  Converts the settings from NuGet.config to a .netconfig.user config
+  thus allowing to respect the nuget sources as set up for dotnet.
+
+  NOTE: settings will be added to .netconfig.user.
+
+inputs:
+  nuget-config:
+    description: >
+      Path to a NuGet.config to convert.
+    required: true
+    default: NuGet.config
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: configure
+    name: Configure .netconfig.user from NuGet.config
+    shell: python
+    env:
+      inputs_nuget_config: ${{inputs.nuget-config}}
+    run: |
+      ## actions/upm/nugettier-config-nuget/action.yml#configure
+      import os, sys, shlex, pprint
+      from urllib.parse import urlparse, urljoin
+      from pathlib import Path
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      parser = etree.XMLParser(remove_blank_text=True)
+
+      nuget_config = Path(os.getenv("inputs_nuget_config"))
+      root = etree.parse(nuget_config, parser).getroot()
+
+      sources = {}
+      for s in root.xpath("/configuration/packageSources/add"):
+          sources[s.attrib["key"]] = {}
+          sources[s.attrib["key"]]["url"] = s.attrib["value"]
+
+      for source in sources.keys():
+          for sroot in root.xpath(
+              f"/configuration/packageSourceCredentials/{source}"
+          ):
+              # only Username/ClearTextPassword supported for now
+              sources[source]["username"] = sroot.find(
+                  "./add[@key='Username']"
+              ).attrib["value"]
+              sources[source]["password"] = sroot.find(
+                  "./add[@key='ClearTextPassword']"
+              ).attrib["value"]
+
+      pprint.pp(sources)
+
+      with open(".netconfig.user", "w") as fh:
+          for key, source in sources.items():
+              if key == "nuget.org":
+                  continue
+
+              url = urlparse(source["url"])
+              pprint.pp(url)
+              registry_path = url.geturl().replace(f"{url.scheme}://", "")
+
+              print(f'[source "{registry_path}"]')
+              print(f'[source "{registry_path}"]', file=fh)
+              print(f"protocol = {url.scheme}")
+              print(f"protocol = {url.scheme}", file=fh)
+
+              if "username" in source:
+                  user = source["username"]
+                  if user.startswith("$") or (
+                      user.startswith("%") and user.endswith("%")
+                  ):
+                      user = str(os.getenv(user.strip("%$"), ""))
+                  print(f"username = {user}")
+                  print(f"username = {user}", file=fh)
+
+              if "password" in source:
+                  password = source["password"]
+                  if password.startswith("$") or (
+                      password.startswith("%") and password.endswith("%")
+                  ):
+                      password = str(os.getenv(password.strip("%$"), ""))
+
+                  print(f"password = {password}")
+                  print(f"password = {password}", file=fh)
+              print("", file=fh)
