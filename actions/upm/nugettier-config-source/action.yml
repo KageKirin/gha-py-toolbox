@@ -1,0 +1,80 @@
+name: UPM NuGettier Configure Source
+description: >
+  Add a NuGet source registry to a local user-level nugettier config file.
+
+inputs:
+  registry:
+    description: >
+      source NuGet registry to fetch from
+    required: false
+    default: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+  username:
+    description: >
+      optional user name.
+      leave empty for public registries.
+      defaults to GitHub user
+    required: false
+    default: ${{github.actor}}
+  token:
+    description: >
+      optional user password / authorization token for the registry.
+      leave empty for public registries.
+      defaults to GITHUB_TOKEN
+    required: false
+    default: ${{github.token}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: configure
+    name: Configure .netconfig.user
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_username: ${{inputs.username}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/upm/nugettier-config-source/action.yml#configure
+      import os, sys, pprint
+      from pathlib import Path
+      from urllib.parse import urlparse, urljoin
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      registry = urlparse(os.getenv("inputs_registry"))
+      assert registry is not None
+
+      username = str(os.getenv("inputs_username", ""))
+      token = str(os.getenv("inputs_token", ""))
+
+      registry_schemeless = registry.geturl().replace(f"{registry.scheme}://", "")
+
+      netconfig = Path(".netconfig")
+      if netconfig.exists():
+          netconfig = Path(".netconfig.user")
+      else:
+          with Path(".netconfig.user").open("a") as fh:
+              print("", file=fh)
+
+      with netconfig.open("a") as fh:
+          print(f'[source "{registry_schemeless}"]')
+          print(f'[source "{registry_schemeless}"]', file=fh)
+
+          print(f"protocol = {registry.scheme}")
+          print(f"protocol = {registry.scheme}", file=fh)
+
+          if len(username):
+              print(f"username = {username}")
+              print(f"username = {username}", file=fh)
+
+          if len(token):
+              print(f"password = {token}")
+              print(f"password = {token}", file=fh)
+
+          print("", file=fh)
+
+  - id: verify-config
+    name: Verify
+    shell: cat .netconfig .netconfig.user {0}
+    run: ''
