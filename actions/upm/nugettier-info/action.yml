@@ -1,0 +1,145 @@
+name: UPM NuGettier Info
+description: >
+  Prints information about a given nuget package (nupkg).
+
+  NOTE: might requiring calling upm/nugettier-config-source or upm/nugettier-config-sources
+  in order to set up the configuration file for repositories other than nuget.org
+
+inputs:
+  package:
+    description: NuGet package name
+    required: true
+  version:
+    description: NuGet package version. Defaults to 'latest'.
+    required: false
+    default: latest
+  prerelease:
+    description: whether to include prerelease versions
+    required: false
+    default: 'true'
+  verbosity:
+    description: >
+      log-level passed to NuGettier
+      trace: all logs (most verbose)
+      debug: debug logs
+      info: good middleground
+      warning: warning and errors only
+      error: errors only
+      critical: critical errors only (least verbose)
+    required: false
+    type: choice
+    options:
+    - trace
+    - debug
+    - information
+    - warning
+    - error
+    - critical
+    default: error
+
+
+outputs:
+  information:
+    description: JSON string of the returned output
+    value: ${{fromJSON(steps.return-info.outputs.info)}}
+
+runs:
+  using: composite
+  steps:
+  - id: print-info
+    name: Info
+    shell: python
+    env:
+      inputs_package: ${{inputs.package}}
+      inputs_version: ${{inputs.version}}
+      inputs_prerelease: ${{inputs.prerelease}}
+      NUGETTIER_Logging__LogLevel__Default: ${{inputs.verbosity}}
+    run: |
+      ## actions/upm/nugettier-info/action.yml#print-info
+      import os, sys, pprint
+      from pathlib import Path
+
+
+      package = str(os.getenv("inputs_package"))
+      assert package is not None
+      assert len(package) > 0
+
+      version = str(os.getenv("inputs_version", "latest"))
+      assert version is not None
+
+      prerelease = os.getenv("inputs_prerelease", "true") == "true"
+
+      cmd = ["dotnet", "nugettier", "info"]
+
+      if len(version):
+          cmd += [f"{package}@{version}"]
+      else:
+          cmd += [package]
+
+      if prerelease:
+          cmd += ["--preRelease"]
+
+      command = " ".join(cmd)
+      print(command)
+      err = os.waitstatus_to_exitcode(os.system(command))
+      print("err", err)
+      assert err == 0
+      exit(err)
+
+  - id: return-info
+    name: Info
+    shell: python
+    env:
+      inputs_package: ${{inputs.package}}
+      inputs_version: ${{inputs.version}}
+      inputs_prerelease: ${{inputs.prerelease}}
+      NUGETTIER_Logging__LogLevel__Default: critical
+    run: |
+      ## actions/upm/nugettier-info/action.yml#return-info
+      import os, sys, pprint, json, subprocess
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      package = str(os.getenv("inputs_package"))
+      assert package is not None
+      assert len(package) > 0
+
+      version = str(os.getenv("inputs_version", "latest"))
+      assert version is not None
+
+      prerelease = os.getenv("inputs_prerelease", "true") == "true"
+
+      cmd = ["dotnet", "nugettier", "info"]
+
+      if len(version):
+          cmd += [f"{package}@{version}"]
+      else:
+          cmd += [package]
+
+      if prerelease:
+          cmd += ["--preRelease"]
+
+      cmd += ["--json"]
+
+      pprint.pp(cmd)
+      j = subprocess.check_outout(cmd)
+
+      data = json.loads(j)
+      data_json_encoded = json.dumps(json.dumps(data))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"info={data_json_encoded}")
+          print(f"info={data_json_encoded}", file=fh)
+
+      exit(err)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/upm/nugettier-info/action.yml#verify-outputs
+      steps.return-info.outputs.info
+      ${{steps.return-info.outputs.info}}
+      ${{fromJSON(steps.return-info.outputs.info)}}
+      ${{fromJSON(fromJSON(steps.return-info.outputs.info))}}
