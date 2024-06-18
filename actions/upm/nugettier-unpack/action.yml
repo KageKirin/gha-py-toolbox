@@ -1,0 +1,174 @@
+name: UPM NuGettier Pack
+description: >
+  Repack a given nuget package (nupkg) at a given version as Unity package
+
+  NOTE: might requiring calling upm/nugettier-config-source or upm/nugettier-config-sources
+  in order to set up the configuration file for repositories other than nuget.org
+
+inputs:
+  registry:
+    description: Target NPM registry to publish to
+    required: false
+    default: https://npm.pkg.github.com/@${{github.repository_owner}}
+  package:
+    description: NuGet package name
+    required: true
+  version:
+    description: NuGet package version. Defaults to 'latest'.
+    required: false
+    default: latest
+  prerelease:
+    description: whether to include prerelease versions
+    required: false
+    default: 'true'
+  amalgamate:
+    description: whether to create amalgamate version
+    required: false
+    default: 'false'
+  unity:
+    description: minimum Unity version required by package.json. Defaults to 2022.3.
+    required: false
+    default: '2022.3'
+  prerelease-suffix:
+    description: version prerelease suffix ('foobar' -> '1.2.3-foobar+buildmeta)
+    required: false
+    default: ''
+  buildmeta-suffix:
+    description: version buildmeta suffix ('foobar' -> '1.2.3-prerelease+foobar)
+    required: false
+    default: ''
+  repository:
+    description: NPM package repository URL, assigned to `{.repository.url`}
+    required: false
+    default: ''
+  directory:
+    description: NPM package directory path, assigned to `{.repository.directory`}
+    required: false
+    default: ''
+  verbosity:
+    description: >
+      log-level passed to NuGettier
+      trace: all logs (most verbose)
+      debug: debug logs
+      info: good middleground
+      warning: warning and errors only
+      error: errors only
+      critical: critical errors only (least verbose)
+    required: false
+    type: choice
+    options:
+    - trace
+    - debug
+    - information
+    - warning
+    - error
+    - critical
+    default: information
+
+
+outputs:
+  packagefolder:
+    description: Path to the created package file (tgz).
+    value: ${{steps.pack.outputs.packagefolder}}
+
+runs:
+  using: composite
+  steps:
+  - id: pack
+    name: Pack
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_package: ${{inputs.package}}
+      inputs_version: ${{inputs.version}}
+      inputs_prerelease: ${{inputs.prerelease}}
+      inputs_amalgamate: ${{inputs.amalgamate}}
+      inputs_unity: ${{inputs.unity}}
+      inputs_prerelease_suffix: ${{inputs.prerelease-suffix}}
+      inputs_buildmeta_suffix: ${{inputs.buildmeta-suffix}}
+      inputs_repository: ${{inputs.repository}}
+      inputs_directory: ${{inputs.directory}}
+      NUGETTIER_Logging__LogLevel__Default: ${{inputs.verbosity}}
+    run: |
+      ## actions/upm/nugettier-unpack/action.yml#pack
+      import os, sys, shlex, pprint
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      registry = str(os.getenv("inputs_registry"))
+      assert registry is not None
+      assert len(registry) > 0
+
+      package = str(os.getenv("inputs_package"))
+      assert package is not None
+      assert len(package) > 0
+
+      version = str(os.getenv("inputs_version", "latest"))
+      assert version is not None
+
+      prerelease = os.getenv("inputs_prerelease", "true") == "true"
+      amalgamate = os.getenv("inputs_amalgamate", "false") == "true"
+
+      unity = str(os.getenv("inputs_unity"))
+      assert unity is not None
+      assert len(unity) > 0
+
+      prerelease_suffix = str(os.getenv("inputs_prerelease_suffix", ""))
+      buildmeta_suffix = str(os.getenv("inputs_buildmeta_suffix", ""))
+      repository = str(os.getenv("inputs_repository", ""))
+      directory = str(os.getenv("inputs_directory", ""))
+
+      cmd = ["dotnet", "nugettier", "upm"]
+
+      if amalgamate:
+          cmd += ["amalgamate"]
+      cmd += ["unpack"]
+
+      if len(version):
+          cmd += [f"{package}@{version}"]
+      else:
+          cmd += [package]
+
+      cmd += ["--target", registry.lower()]
+      cmd += ["--unity", unity]
+      cmd += ["--outputDirectory", "."]
+
+      if prerelease:
+          cmd += ["--preRelease"]
+
+      if prerelease_suffix and len(prerelease_suffix):
+          cmd += ["--prerelease-suffix", prerelease_suffix]
+
+      if buildmeta_suffix and len(buildmeta_suffix):
+          cmd += ["--buildmeta-suffix", buildmeta_suffix]
+
+      if repository and len(repository):
+          cmd += ["--repository", repository]
+
+      if directory and len(directory):
+          cmd += ["--directory", directory]
+
+      command = " ".join(cmd)
+      print(command, flush=True)
+      err = os.waitstatus_to_exitcode(os.system(command))
+      print("err", err)
+      assert err == 0
+
+      files = list(Path(".").rglob("*.tgz"))
+      assert len(files)
+      packagefolder = files[0]
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packagefolder={packagefolder}")
+          print(f"packagefolder={packagefolder}", file=fh)
+
+      exit(err)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/upm/nugettier-unpack/action.yml#verify-outputs
+      steps.pack.outputs.packagefolder
+      ${{steps.pack.outputs.packagefolder}}

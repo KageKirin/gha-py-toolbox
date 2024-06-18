@@ -1,0 +1,241 @@
+name: Test UPM NuGettier
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+        - actions/upm/nugettier*
+        - .github/workflows/test-upm-nugettier.yml
+  push:
+    paths:
+      - actions/upm/nugettier*
+      - .github/workflows/test-upm-nugettier.yml
+
+jobs:
+  install:
+    runs-on: ${{matrix.platform}}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./actions/upm/nugettier-install
+      with:
+        accept-license: YES
+
+
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+    - uses: actions/checkout@v4
+    - name: Configure defaults
+      uses: ./actions/upm/nugettier-config-defaults
+    - name: Configure official NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://api.nuget.org/v3/index.json
+        username: ''
+        token: ''
+    - name: Configure GitHub NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+        username: ${{github.actor}}
+        token: ${{secrets.GITHUB_TOKEN}}
+    - name: Verify installation
+      shell: cat .netconfig.user {0}
+      run: ''
+
+  pack:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    needs:
+    - install
+    - config
+    strategy:
+      matrix:
+        version: ['latest', '0.0.35']
+        amalgamate: ['false', 'true']
+        target: ['npmjs', 'github']
+        include:
+          - target: npmjs
+            registry: https://registry.npmjs.org/
+          - target: github
+            registry: https://npm.pkg.github.com/@${{github.repository_owner}}/
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./actions/upm/nugettier-install
+      with:
+        accept-license: YES
+    - name: Configure defaults
+      uses: ./actions/upm/nugettier-config-defaults
+    - name: Configure official NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://api.nuget.org/v3/index.json
+        username: ''
+        token: ''
+    - name: Configure GitHub NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+        username: ${{github.actor}}
+        token: ${{secrets.GITHUB_TOKEN}}
+    - name: Verify installation
+      shell: cat .netconfig.user {0}
+      run: ''
+    - id: nugettier-pack
+      name: NuGettier Pack
+      uses: ./actions/upm/nugettier-pack
+      with:
+        registry: ${{matrix.registry}}
+        package: Keillogs
+        version: ${{matrix.version}}
+        amalgamate: ${{matrix.amalgamate}}
+        prerelease: true
+        prerelease-suffix: ${{github.run_id}}.${{github.run_number}}
+        buildmeta-suffix: test.${{matrix.target}}
+        verbosity: trace
+
+  pack2:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    needs:
+    - install
+    - config
+    strategy:
+      matrix:
+        package: ['System.Text.Json']
+        version: ['latest']
+        amalgamate: ['false', 'true']
+        target: ['npmjs', 'github']
+        include:
+          - target: npmjs
+            registry: https://registry.npmjs.org/
+          - target: github
+            registry: https://npm.pkg.github.com/@${{github.repository_owner}}/
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./actions/upm/nugettier-install
+      with:
+        accept-license: YES
+    - name: Configure defaults
+      uses: ./actions/upm/nugettier-config-defaults
+    - name: Configure official NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://api.nuget.org/v3/index.json
+        username: ''
+        token: ''
+    - name: Configure GitHub NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+        username: ${{github.actor}}
+        token: ${{secrets.GITHUB_TOKEN}}
+    - name: Verify installation
+      shell: cat .netconfig.user {0}
+      run: ''
+    - id: nugettier-pack
+      name: NuGettier Pack
+      uses: ./actions/upm/nugettier-pack
+      with:
+        registry: ${{matrix.registry}}
+        package: ${{matrix.package}}
+        version: ${{matrix.version}}
+        amalgamate: ${{matrix.amalgamate}}
+        prerelease: true
+        prerelease-suffix: ${{github.run_id}}.${{github.run_number}}
+        buildmeta-suffix: test.${{matrix.target}}
+        verbosity: trace
+
+  info:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    needs:
+    - install
+    - config
+    strategy:
+      matrix:
+        version: ['latest', '0.0.35']
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./actions/upm/nugettier-install
+      with:
+        accept-license: YES
+    - name: Configure defaults
+      uses: ./actions/upm/nugettier-config-defaults
+    - name: Configure official NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://api.nuget.org/v3/index.json
+        username: ''
+        token: ''
+    - name: Configure GitHub NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+        username: ${{github.actor}}
+        token: ${{secrets.GITHUB_TOKEN}}
+    - name: Verify installation
+      shell: cat .netconfig.user {0}
+      run: ''
+    - id: nugettier-info
+      name: NuGettier Info
+      uses: ./actions/upm/nugettier-info
+      with:
+        package: Keillogs
+        version: ${{matrix.version}}
+        prerelease: true
+        verbosity: trace
+
+  info2:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    needs:
+    - install
+    - config
+    strategy:
+      matrix:
+        package: ['System.Text.Json']
+        version: ['latest']
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./actions/upm/nugettier-install
+      with:
+        accept-license: YES
+    - name: Configure defaults
+      uses: ./actions/upm/nugettier-config-defaults
+    - name: Configure official NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://api.nuget.org/v3/index.json
+        username: ''
+        token: ''
+    - name: Configure GitHub NuGet registry
+      uses: ./actions/upm/nugettier-config-source
+      with:
+        registry: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+        username: ${{github.actor}}
+        token: ${{secrets.GITHUB_TOKEN}}
+    - name: Verify installation
+      shell: cat .netconfig.user {0}
+      run: ''
+    - id: nugettier-info
+      name: NuGettier Info
+      uses: ./actions/upm/nugettier-info
+      with:
+        package: ${{matrix.package}}
+        version: ${{matrix.version}}
+        prerelease: true
+        verbosity: trace

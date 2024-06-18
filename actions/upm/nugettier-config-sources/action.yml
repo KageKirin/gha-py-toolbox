@@ -1,0 +1,47 @@
+name: UPM NuGettier Configure Sources
+description: >
+  Add 1+ NuGet source registries to a local user-level nugettier config file.
+
+inputs:
+  sources:
+    description: >
+      Whitespace-separated of NuGet repository URLs.
+      For repositories requiring authentication, <user> and <password> should be passed
+      as part of the URL
+      e.g. `https://user:password@my-registry.com/nuget/index.json`
+    required: true
+    default: ''
+
+
+runs:
+  using: composite
+  steps:
+  - id: configure
+    name: Configure .netconfig.user
+    shell: python
+    env:
+      inputs_sources: ${{inputs.sources}}
+    run: |
+      ## actions/upm/nugettier-config-sources/action.yml#configure
+      import os, sys, shlex, pprint
+      from urllib.parse import urlparse, urljoin
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      sources = str(os.getenv("inputs_sources", "")).split()
+      with open(".netconfig.user", "w") as fh:
+          for source in sources:
+              s = source.split(";")
+              url = urlparse(s[0])
+              pprint.pp(url)
+              registry_path = url.geturl().replace(f"{url.scheme}://", "")
+
+              print(f'[source "{registry_path}"]')
+              print(f'[source "{registry_path}"]', file=fh)
+              print(f"protocol = {url.scheme}")
+              print(f"protocol = {url.scheme}", file=fh)
+              if len(s) > 1:
+                  print(f"password = {s[1]}")
+                  print(f"password = {s[1]}", file=fh)
+              print("", file=fh)
