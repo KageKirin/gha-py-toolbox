@@ -1,0 +1,101 @@
+name: UPM NuGettier Configure using NuGet.config
+description: >
+  Converts the settings from NuGet.config to a .netconfig.user config
+  thus allowing to respect the nuget sources as set up for dotnet.
+
+  NOTE: settings will be added to .netconfig.user.
+
+inputs:
+  nuget-config:
+    description: >
+      Path to a NuGet.config to convert.
+    required: true
+    default: NuGet.config
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        xmltodict
+
+  - id: configure
+    name: Configure .netconfig.user from NuGet.config
+    shell: python
+    env:
+      inputs_nuget_config: ${{inputs.nuget-config}}
+    run: |
+      import os, sys, pprint
+      from urllib.parse import urlparse, urljoin
+      from pathlib import Path
+      import xmltodict
+
+      nuget_config = Path(os.getenv("inputs_nuget_config"))
+      cfg = xmltodict.parse(nuget_config.read_text())
+      pprint.pp(cfg)
+
+      sources = {}
+
+      assert "configuration" in cfg
+      assert "packageSources" in cfg["configuration"]
+      assert len(cfg["configuration"]["packageSources"])
+      assert "packageSourceCredentials" in cfg["configuration"]
+      assert len(cfg["configuration"]["packageSourceCredentials"])
+
+      # NOTE: no support yet for packageSourceMapping
+
+
+      for source in cfg["configuration"]["packageSources"]["add"]:
+          pprint.pp(source)
+          sources[source["@key"]] = {"url": source["@value"]}
+
+      print("sources", sources)
+
+      pprint.pp(cfg["configuration"]["packageSourceCredentials"])
+      for source, cred in cfg["configuration"]["packageSourceCredentials"].items():
+          pprint.pp(cred)
+          for c in cred["add"]:
+              print("c", c)
+              if c["@key"] == "Username":
+                  sources[source]["user"] = c["@value"]
+              if c["@key"] == "ClearTextPassword":
+                  sources[source]["password"] = c["@value"]
+
+      print("sources", sources)
+
+      with open(".netconfig.user", "w") as fh:
+          for key, source in sources.items():
+              if key == "nuget.org":
+                  continue
+
+              url = urlparse(source["url"])
+              pprint.pp(url)
+              registry_path = url.geturl().replace(f"{url.scheme}://", "")
+
+              print(f'[source "{registry_path}"]')
+              print(f'[source "{registry_path}"]', file=fh)
+              print(f"protocol = {url.scheme}")
+              print(f"protocol = {url.scheme}", file=fh)
+
+              if "user" in source:
+                  user = source["user"]
+                  if user.startswith("$") or (
+                      user.startswith("%") and user.endswith("%")
+                  ):
+                      user = os.getenv(user.strip("%$"))
+                  print(f"username = {user}")
+                  print(f"username = {user}", file=fh)
+
+              if "password" in source:
+                  password = source["password"]
+                  if password.startswith("$") or (
+                      password.startswith("%") and password.endswith("%")
+                  ):
+                      password = os.getenv(password.strip("%$"))
+
+                  print(f"password = {password}")
+                  print(f"password = {password}", file=fh)
+              print("", file=fh)
