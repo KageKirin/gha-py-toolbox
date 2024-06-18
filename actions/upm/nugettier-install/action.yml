@@ -1,0 +1,122 @@
+name: UPM Install NuGettier
+description: >-
+  GitHub Action to install NuGettier
+
+inputs:
+  accept-license:
+    description: "[YES|NO] Must be set explicitly to 'YES' to accept the license. Install won't proceed without."
+    required: false
+    default: NO
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: display-license
+    name: Display license
+    shell: python
+    run: |
+      ## actions/upm/nugettier-install/action.yml#display-license
+      import os, sys, shlex, requests
+
+      license = requests.get(
+          "https://raw.githubusercontent.com/KageKirin/NuGettier/main/LICENSE"
+      )
+      print(license.text)
+
+  - id: check-license
+    name: Check license acceptation
+    shell: python
+    env:
+      inputs_accept: ${{inputs.accept-license}}
+    run: |
+      ## actions/upm/nugettier-install/action.yml#check-license
+      import os, sys
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      accept = str(os.getenv("inputs_accept"))
+
+      if accept.lower() == "yes":
+          print("Thank you for accepting the license terms.")
+          print("Installation can proceed.")
+          exit(0)
+
+
+      print("Sorry, but you have to explicitly accept the license terms")
+      print("by setting accept-license to 'yes'.")
+      print("Installation cannot proceed")
+      exit(1)
+
+  - id: install-nugettier
+    name: Install NuGettier
+    uses: kagekirin/gha-py-toolbox/actions/install/dotnet-tool@main
+    with:
+      packages: NuGettier@prerelease
+
+  - id: fetch-configs
+    name: Fetch default configs
+    shell: python
+    run: |
+      ## actions/upm/nugettier-install/action.yml#fetch-configs
+      import os, sys, shlex, requests
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      appconfig = requests.get(
+          "https://github.com/KageKirin/NuGettier/blob/main/appconfig.json"
+      )
+      with open("appconfig.json", "w") as fh:
+          print(appconfig.text, file=fh)
+
+      netconfig = requests.get(
+          "https://github.com/KageKirin/NuGettier/blob/main/.netconfig"
+      )
+      with open(".netconfig", "w") as fh:
+          print(netconfig.text, file=fh)
+
+
+  - id: add-to-path
+    name: Add to PATH if not added yet
+    shell: python
+    run: |
+      ## actions/upm/nugettier-install/action.yml#add-to-path
+      import os, sys, shlex, re, requests
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      path = os.getenv("PATH")
+      pathes = path.split(";") if sys.platform.startswith("win") else path.split(":")
+
+      re_dotnetpath = (
+          re.compile(r"\.dotnet\\tools")
+          if sys.platform.startswith("win")
+          else re.compile(r"\.dotnet/tools")
+      )
+      if not any([re_dotnetpath.search(p) for p in pathes]):
+          with open(os.environ["GITHUB_PATH"], "a") as fh:
+              toolspath = Path.join(Path.home(), ".dotnet", "tools")
+              print(toolspath)
+              print(toolspath, file=fh)
+
+  - id: verify
+    name: Verify installation
+    shell: python
+    run: |
+      ## actions/upm/nugettier-install/action.yml#verify
+      import os, sys, shlex, shutil
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+      print(os.getenv("PATH"))
+
+      print(shutil.which("dotnet-nugettier"))
+      err = os.waitstatus_to_exitcode(os.system("dotnet nugettier --version"))
+      exit(err)
+

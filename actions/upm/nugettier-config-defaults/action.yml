@@ -1,0 +1,123 @@
+name: UPM NuGettier Configure Defaults
+description: >
+  Adds Good Defaults (tm) to user-level config file.
+  Required for testing NuGettier actions.
+
+inputs:
+  default-package-name:
+    description: >
+      Default package name.
+      Handlebars template
+    required: false
+    default: external.{{{Authors}}}.{{{Identity.Id}}}
+  default-guid-algorithm:
+    description: >
+      Default META file GUID algorithm
+    required: false
+    type: choice
+    options:
+    - sha1
+    - md5
+    - xxhash64
+    - xxhash3
+    - xxhash128
+    - uranium.xxhash64
+    - uranium.xxhash3
+    - uranium.xxhash128
+    default: xxhash128
+  default-guid-format:
+    description: >
+      Default META file GUID format
+    required: false
+    type: choice
+    options:
+    - ''
+    - unity
+    - rfc4122
+    - unity_rfc4122
+    default: unity
+
+
+runs:
+  using: composite
+  steps:
+  - id: configure
+    name: Configure .netconfig.user
+    shell: python
+    env:
+      default_package_name: ${{inputs.default-package-name}}
+      default_guid_algorithm: ${{inputs.default-guid-algorithm}}
+      default_guid_format: ${{inputs.default-guid-format}}
+    run: |
+      ## actions/upm/nugettier-config-defaults/action.yml#configure
+      import os, sys, shlex, pprint
+      from pathlib import Path
+      from urllib.parse import urlparse, urljoin
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      package_name = os.getenv("default_package_name")
+      assert package_name is not None
+
+      guid_algorithm = os.getenv("default_guid_algorithm")
+      assert guid_algorithm is not None
+
+      guid_format = os.getenv("default_guid_format")
+      assert guid_format is not None
+
+      netconfig = Path(".netconfig")
+      if netconfig.exists():
+          netconfig = Path(".netconfig.user")
+      else:
+          with Path(".netconfig.user").open("a") as fh:
+              print("", file=fh)
+
+      with netconfig.open("a") as fh:
+          print("[guid]")
+          print("[guid]", file=fh)
+          print(f'algorithm = "{guid_algorithm}"')
+          print(f'algorithm = "{guid_algorithm}"', file=fh)
+          print(f'format = "{guid_format}"')
+          print(f'format = "{guid_format}"', file=fh)
+          print("", file=fh)
+
+          if len(package_name):
+              print('[package ""]')
+              print('[package ""]', file=fh)
+              print(f"name = {package_name}")
+              print(f"name = {package_name}", file=fh)
+              print(f"recurse = true")
+              print(f"recurse = true", file=fh)
+              print("", file=fh)
+
+          print('[unity "2023.*"]')
+          print('[unity "2023.*"]', file=fh)
+          print('framework = "netstandard2.1"')
+          print('framework = "netstandard2.1"', file=fh)
+          print("", file=fh)
+
+          print('[unity "2022.*"]')
+          print('[unity "2022.*"]', file=fh)
+          print('framework = "netstandard2.1"')
+          print('framework = "netstandard2.1"', file=fh)
+          print("", file=fh)
+
+          print('[unity "2021.*"]')
+          print('[unity "2021.*"]', file=fh)
+          print('framework = "netstandard2.0"')
+          print('framework = "netstandard2.0"', file=fh)
+          print("", file=fh)
+
+          print("[defaults]")
+          print("[defaults]", file=fh)
+          print('unity = "2022.3"')
+          print('unity = "2022.3"', file=fh)
+          print('output-directory = "."')
+          print('output-directory = "."', file=fh)
+          print("", file=fh)
+
+
+  - id: verify-config
+    name: Verify
+    shell: cat .netconfig .netconfig.user {0}
+    run: ''
