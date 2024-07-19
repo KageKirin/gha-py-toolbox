@@ -1,0 +1,109 @@
+name: 'GIT SEMVER MACRO: bump version tag'
+description: >-
+  Bumps a semver compatible version tag.
+  e.g. '1.2.3-pre.2+build.4'
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  tag-version-format:
+    description: Python regex to identify a tag as version and retrieve said version
+      from said tag
+    required: false
+    default: v(\d+\.\d+\.\d+)
+
+  commitish:
+    description: >
+      Commit-ish to tag.
+      Default is empty, i.e. defaults to HEAD.
+    required: false
+    default: ''
+  message:
+    description: >
+      Tag message.
+      Empty string (default) creates a lightweight tag.
+      Any longer message creates a fully annotated tag.
+    required: false
+    default: ''
+
+  bump_major:
+    description: whether to bump version major (e.g '1.2.3' -> '2.0.0')
+    required: false
+    default: 'false'
+  bump_minor:
+    description: whether to bump version minor (e.g. '1.2.3' -> '1.3.0')
+    required: false
+    default: 'false'
+  bump_patch:
+    description: whether to bump version patch (e.g. '1.2.3' -> '1.2.4')
+    required: false
+    default: 'false'
+  bump_prerelease:
+    description: whether to bump version prerelease (e.g. '1.2.3-rc.0' -> '1.2.3-rc.1')
+    required: false
+    default: 'false'
+  set_prerelease:
+    description: new prerelease component to set (e.g. '1.2.3' -> '1.2.3-rc.0')
+    required: false
+    default: ''
+  set_build:
+    description: new build component to set (e.g. '1.2.3' -> '1.2.3+foobar')
+    required: false
+    default: ''
+  finalize:
+    description: any prerelease and build metadata from the version (e.g. '1.2.3-rc.0+foobar' -> '1.2.3')
+    required: false
+    default: 'false'
+  numerical_limit:
+    description: >
+      Numerical limit (maximum) for a version component.
+      e.g. .NET version components can only reach a maximum of signed-16-bit-word,
+      i.e. 32767.
+      This action will automatically bump the next upper component and reset the current
+      component to 0
+      if it exceeds the numerical_limit.
+      Caveat: note that exceeding the numerical limit with the major component will
+      fail.
+    required: false
+    default: '32767'
+
+
+outputs:
+  version:
+    description: bumped version
+    value: ${{steps.bump-version.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - id: get-latest-version-tag
+    name: Get latest version tag
+    uses: kagekirin/gha-py-toolbox/actions/git/get-latest-version-tag@main
+    with:
+      path: ${{inputs.path}}
+      tag-version-format: ${{inputs.tag-version-format}}
+
+  - id: bump-version
+    name: Bump ${{steps.get-latest-version-tag.outputs.version}}
+    uses: kagekirin/gha-py-toolbox/actions/semver/bump-version@main
+    with:
+      version: ${{steps.get-latest-version-tag.outputs.version}}
+      bump_major: ${{inputs.bump_major}}
+      bump_minor: ${{inputs.bump_minor}}
+      bump_patch: ${{inputs.bump_patch}}
+      bump_prerelease: ${{inputs.bump_prerelease}}
+      numerical_limit: ${{inputs.numerical_limit}}
+      set_prerelease: ${{inputs.set_prerelease}}
+      set_build: ${{inputs.set_build}}
+      finalize: ${{inputs.finalize}}
+
+  - id: update-tag
+    name: Set latest tag to ${{steps.bump-version.outputs.version}}
+    uses: kagekirin/gha-py-toolbox/actions/git/tag@main
+    with:
+      path: ${{inputs.path}}
+      commitish: ${{inputs.commitish}}
+      message: ${{inputs.message}}
+      tag: v${{steps.bump-version.outputs.version}}
