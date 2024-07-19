@@ -46,6 +46,31 @@ inputs:
     required: false
     default: ${{ github.token }}
 
+  restore-options:
+    description: >
+      supplementary command line options forwarded to `dotnet restore`
+      whitespace separated list.
+    required: false
+    default: ''
+  build-options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+  pack-options:
+    description: >
+      supplementary command line options forwarded to `dotnet pack`
+      whitespace separated list.
+    required: false
+    default: ''
+  publish-options:
+    description: >
+      supplementary command line options forwarded to `dotnet nuget push`
+      whitespace separated list.
+    required: false
+    default: ''
+
   ## inputs from actions/checkout@v4
   repository:
     description: Repository name with owner. For example, actions/checkout
@@ -55,6 +80,7 @@ inputs:
       The branch, tag or SHA to checkout. When checking out the repository that
       triggered a workflow, this defaults to the reference or SHA for that
       event.  Otherwise, uses the default branch.
+    default: ${{ github.ref }}
   token:
     description: >
       Personal access token (PAT) used to fetch the repository. The PAT is configured
@@ -154,8 +180,19 @@ inputs:
 runs:
   using: composite
   steps:
-  - uses: actions/checkout@v4
+  - id: pack
+    name: Checkout, build and pack nupkgs
+    uses: kagekirin/gha-py-toolbox/jobs/dotnet/checkout-build-pack@main
     with:
+      path: ${{ inputs.path }}
+      projects: ${{ inputs.projects }}
+      configurations: ${{ inputs.configurations }}
+      frameworks: ${{ inputs.frameworks }}
+
+      restore-options: ${{ inputs.restore-options }}
+      build-options: ${{ inputs.build-options }}
+      pack-options: ${{ inputs.pack-options }}
+
       repository: ${{ inputs.repository }}
       ref: ${{ inputs.ref }}
       token: ${{ inputs.token }}
@@ -164,25 +201,23 @@ runs:
       ssh-strict: ${{ inputs.ssh-strict }}
       ssh-user: ${{ inputs.ssh-user }}
       persist-credentials: ${{ inputs.persist-credentials }}
-      path: ${{ inputs.path }}
       clean: ${{ inputs.clean }}
       filter: ${{ inputs.filter }}
       sparse-checkout: ${{ inputs.sparse-checkout }}
       sparse-checkout-cone-mode: ${{ inputs.sparse-checkout-cone-mode }}
       fetch-depth: ${{ inputs.fetch-depth }}
-      fetch-tags: ${{ inputs.fetch-tags }}
       show-progress: ${{ inputs.show-progress }}
       lfs: ${{ inputs.lfs }}
       submodules: ${{ inputs.submodules }}
       set-safe-directory: ${{ inputs.set-safe-directory }}
       github-server-url: ${{ inputs.github-server-url }}
 
-  - id: build-pack-publish
-    uses: kagekirin/gha-py-toolbox/macros/dotnet/build-pack-publish@main
+  - id: publish
+    name: Publish nupkgs
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/publish@main
     with:
       path: ${{ inputs.path }}
-      projects: ${{ inputs.projects }}
-      configurations: ${{ inputs.configurations }}
-      frameworks: ${{ inputs.frameworks }}
+      packages: ${{ steps.pack.outputs.packages }}
       registry: ${{ inputs.registry }}
       token: ${{ inputs.nuget-token }}
+      options: ${{ inputs.publish-options }}
