@@ -33,6 +33,32 @@ inputs:
     required: false
     default: ''
 
+  restore-options:
+    description: >
+      supplementary command line options forwarded to `dotnet restore`
+      whitespace separated list.
+    required: false
+    default: ''
+  build-options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+  pack-options:
+    description: >
+      supplementary command line options forwarded to `dotnet pack`
+      whitespace separated list.
+    required: false
+    default: ''
+  filter-packages:
+    description: >
+      optional set of regular expressions to filter out packages to not publish.
+      whitelist, i.e. only matching packages will be published.
+      empty string (default) is equivalent to /.*/ (match all)
+    required: false
+    default: ''
+
   ## inputs from actions/checkout@v4
   repository:
     description: Repository name with owner. For example, actions/checkout
@@ -42,6 +68,7 @@ inputs:
       The branch, tag or SHA to checkout. When checking out the repository that
       triggered a workflow, this defaults to the reference or SHA for that
       event.  Otherwise, uses the default branch.
+    default: ${{github.ref}}
   token:
     description: >
       Personal access token (PAT) used to fetch the repository. The PAT is configured
@@ -138,6 +165,19 @@ inputs:
       or https://my-ghes-server.example.com
     required: false
 
+  nuget-cache:
+    description: >
+      path(s) to cache for nuget packages.
+      empty (default): no cache
+    required: false
+    default: ''
+  build-cache:
+    description: >
+      path(s) to cache for build artifacts.
+      empty (default): no cache
+    required: false
+    default: ''
+
 outputs:
   packages:
     description: >
@@ -147,7 +187,7 @@ outputs:
 runs:
   using: composite
   steps:
-  - uses: actions/checkout@v4
+  - uses: kagekirin/gha-py-toolbox/jobs/dotnet/checkout-build@main
     with:
       repository: ${{inputs.repository}}
       ref: ${{inputs.ref}}
@@ -170,13 +210,15 @@ runs:
       set-safe-directory: ${{inputs.set-safe-directory}}
       github-server-url: ${{inputs.github-server-url}}
 
-  - id: build
-    uses: kagekirin/gha-py-toolbox/actions/dotnet/build@main
-    with:
-      path: ${{inputs.path}}
       projects: ${{inputs.projects}}
       configurations: ${{inputs.configurations}}
       frameworks: ${{inputs.frameworks}}
+
+      restore-options: ${{inputs.restore-options}}
+      build-options: ${{inputs.build-options}}
+
+      nuget-cache: ${{inputs.nuget-cache}}
+      build-cache: ${{inputs.build-cache}}
 
   - id: pack
     uses: kagekirin/gha-py-toolbox/actions/dotnet/pack@main
@@ -185,3 +227,5 @@ runs:
       projects: ${{inputs.projects}}
       configurations: ${{inputs.configurations}}
       frameworks: ${{inputs.frameworks}}
+      options: ${{inputs.pack-options}}
+      filter-packages: ${{inputs.filter-packages}}
