@@ -140,7 +140,7 @@ inputs:
 runs:
   using: composite
   steps:
-  - uses: actions/checkout@v4
+  - uses: kagekirin/gha-py-toolbox/macros/git/checkout-with-tags@main
     with:
       repository: ${{ inputs.repository }}
       ref: ${{ inputs.ref }}
@@ -156,7 +156,6 @@ runs:
       sparse-checkout: ${{ inputs.sparse-checkout }}
       sparse-checkout-cone-mode: ${{ inputs.sparse-checkout-cone-mode }}
       fetch-depth: ${{ inputs.fetch-depth }}
-      fetch-tags: ${{ inputs.fetch-tags }}
       show-progress: ${{ inputs.show-progress }}
       lfs: ${{ inputs.lfs }}
       submodules: ${{ inputs.submodules }}
