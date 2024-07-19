@@ -33,6 +33,51 @@ inputs:
     required: false
     default: ''
 
+  nuget-config:
+    description: >
+      NuGet.config file to use
+      empty string (default) refers `NuGet.config`
+    required: false
+    default: ''
+  tool-manifest:
+    description: >
+      dotnet-tools.json file to use
+      empty string (default) refers `.config/dotnet-tools.json`
+    required: false
+    default: ''
+
+  restore-tools-options:
+    description: >
+      supplementary command line options forwarded to `dotnet tool restore`
+      newline separated list.
+    required: false
+    default: ''
+  restore-options:
+    description: >
+      supplementary command line options forwarded to `dotnet restore`
+      whitespace separated list.
+    required: false
+    default: ''
+  build-options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+  pack-options:
+    description: >
+      supplementary command line options forwarded to `dotnet pack`
+      whitespace separated list.
+    required: false
+    default: ''
+  filter-packages:
+    description: >
+      optional set of regular expressions to filter out packages to not publish.
+      whitelist, i.e. only matching packages will be published.
+      empty string (default) is equivalent to /.*/ (match all)
+    required: false
+    default: ''
+
   ## inputs from actions/checkout@v4
   repository:
     description: Repository name with owner. For example, actions/checkout
@@ -42,6 +87,7 @@ inputs:
       The branch, tag or SHA to checkout. When checking out the repository that
       triggered a workflow, this defaults to the reference or SHA for that
       event.  Otherwise, uses the default branch.
+    default: ${{github.ref}}
   token:
     description: >
       Personal access token (PAT) used to fetch the repository. The PAT is configured
@@ -89,8 +135,7 @@ inputs:
     description: Whether to configure the token or SSH key with the local git config
     default: true
   clean:
-    description: Whether to execute `git clean -ffdx && git reset --hard HEAD` before
-      fetching
+    description: Whether to execute `git clean -ffdx && git reset --hard HEAD` before fetching
     default: true
   filter:
     description: >
@@ -107,8 +152,7 @@ inputs:
       Specifies whether to use cone-mode when doing a sparse checkout.
     default: true
   fetch-depth:
-    description: Number of commits to fetch. 0 indicates all history for all branches
-      and tags.
+    description: Number of commits to fetch. 0 indicates all history for all branches and tags.
     default: 1
   show-progress:
     description: Whether to show progress status output when fetching.
@@ -128,26 +172,36 @@ inputs:
       converted to HTTPS.
     default: false
   set-safe-directory:
-    description: Add repository path as safe.directory for Git global config by running
-      `git config --global --add safe.directory <path>`
+    description: Add repository path as safe.directory for Git global config by running `git config --global --add safe.directory <path>`
     default: true
   github-server-url:
-    description: The base URL for the GitHub instance that you are trying to clone
-      from, will use environment defaults to fetch from the same instance that the
-      workflow is running from unless specified. Example URLs are https://github.com
-      or https://my-ghes-server.example.com
+    description: The base URL for the GitHub instance that you are trying to clone from, will use environment defaults to fetch from the same instance that the workflow is running from unless specified. Example URLs are https://github.com or https://my-ghes-server.example.com
+    required: true
+    default: ${{github.server_url}}
+
+  nuget-cache:
+    description: >
+      path(s) to cache for nuget packages.
+      empty (default): no cache
     required: false
+    default: ''
+  build-cache:
+    description: >
+      path(s) to cache for build artifacts.
+      empty (default): no cache
+    required: false
+    default: ''
 
 outputs:
   packages:
     description: >
-      space-separated list of created .nupkg files
+      whitespace-separated list of created .nupkg files
     value: ${{steps.pack.outputs.packages}}
 
 runs:
   using: composite
   steps:
-  - uses: actions/checkout@v4
+  - uses: kagekirin/gha-py-toolbox/jobs/dotnet/checkout-build@main
     with:
       repository: ${{inputs.repository}}
       ref: ${{inputs.ref}}
@@ -170,13 +224,18 @@ runs:
       set-safe-directory: ${{inputs.set-safe-directory}}
       github-server-url: ${{inputs.github-server-url}}
 
-  - id: build
-    uses: kagekirin/gha-py-toolbox/actions/dotnet/build@main
-    with:
-      path: ${{inputs.path}}
       projects: ${{inputs.projects}}
       configurations: ${{inputs.configurations}}
       frameworks: ${{inputs.frameworks}}
+
+      nuget-config: ${{inputs.nuget-config}}
+      tool-manifest: ${{inputs.tool-manifest}}
+      restore-tools-options: ${{inputs.restore-tools-options}}
+      restore-options: ${{inputs.restore-options}}
+      build-options: ${{inputs.build-options}}
+
+      nuget-cache: ${{inputs.nuget-cache}}
+      build-cache: ${{inputs.build-cache}}
 
   - id: pack
     uses: kagekirin/gha-py-toolbox/actions/dotnet/pack@main
@@ -185,3 +244,5 @@ runs:
       projects: ${{inputs.projects}}
       configurations: ${{inputs.configurations}}
       frameworks: ${{inputs.frameworks}}
+      options: ${{inputs.pack-options}}
+      filter-packages: ${{inputs.filter-packages}}
