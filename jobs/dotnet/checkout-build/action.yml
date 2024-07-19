@@ -140,7 +140,7 @@ inputs:
 runs:
   using: composite
   steps:
-  - uses: actions/checkout@v4
+  - uses: kagekirin/gha-py-toolbox/macros/git/checkout-with-tags@main
     with:
       repository: ${{inputs.repository}}
       ref: ${{inputs.ref}}
