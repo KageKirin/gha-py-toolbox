@@ -154,8 +154,15 @@ inputs:
 runs:
   using: composite
   steps:
-  - uses: actions/checkout@v4
+  - id: pack
+    name: Checkout, build and pack nupkgs
+    uses: kagekirin/gha-py-toolbox/jobs/dotnet/checkout-build-pack@main
     with:
+      path: ${{ inputs.path }}
+      projects: ${{ inputs.projects }}
+      configurations: ${{ inputs.configurations }}
+      frameworks: ${{ inputs.frameworks }}
+
       repository: ${{ inputs.repository }}
       ref: ${{ inputs.ref }}
       token: ${{ inputs.token }}
@@ -164,7 +171,6 @@ runs:
       ssh-strict: ${{ inputs.ssh-strict }}
       ssh-user: ${{ inputs.ssh-user }}
       persist-credentials: ${{ inputs.persist-credentials }}
-      path: ${{ inputs.path }}
       clean: ${{ inputs.clean }}
       filter: ${{ inputs.filter }}
       sparse-checkout: ${{ inputs.sparse-checkout }}
@@ -177,12 +183,11 @@ runs:
       set-safe-directory: ${{ inputs.set-safe-directory }}
       github-server-url: ${{ inputs.github-server-url }}
 
-  - id: build-pack-publish
-    uses: kagekirin/gha-py-toolbox/macros/dotnet/build-pack-publish@main
+  - id: publish
+    name: Publish nupkgs
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/publish@main
     with:
       path: ${{ inputs.path }}
-      projects: ${{ inputs.projects }}
-      configurations: ${{ inputs.configurations }}
-      frameworks: ${{ inputs.frameworks }}
+      packages: ${{ steps.pack.outputs.packages }}
       registry: ${{ inputs.registry }}
       token: ${{ inputs.nuget-token }}
