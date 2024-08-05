@@ -1,0 +1,91 @@
+name: SLACK send message (RAW version)
+description: >-
+  Send a slack chat message (RAW requests version)
+
+inputs:
+  token:
+    description: >-
+      slack token
+      obtained from a creating a new `app` (in slack terms)
+      @see: 
+    required: true
+  channel:
+    description: channel (#) or user (@) to send message to
+    required: true
+  message:
+    description: message text
+    required: true
+  method:
+    description: >-
+      method name
+      can be either `chat.postMessage` for a regular message
+      or `chat.meMessage` for a `/me` message
+    required: false
+    type: choice
+    options:
+    - chat.postMessage
+    - chat.meMessage
+    default: chat.postMessage
+
+
+outputs:
+  response:
+    description: slack response
+    value: ${{steps.send-message.outputs.response}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: send-message
+    name: Parse ${{inputs.version}}
+    shell: python
+    env:
+      SLACK_TOKEN: ${{inputs.token}}
+      inputs_channel: ${{inputs.channel}}
+      inputs_message: ${{inputs.message}}
+      inputs_method: ${{inputs.method}}
+    run: |
+      ## actions/slack/send-message-raw/action.yml#send-message
+      import os, sys, json, pprint
+      import requests
+
+      token = os.environ["SLACK_TOKEN"]
+
+      headers = {
+          "Authorization": f"Bearer {token}",
+          "Content-type": "application/json",
+          "Accept": "application/json",
+      }
+
+      channel = os.environ["inputs_channel"]
+      message = os.environ["inputs_message"]
+      method = os.environ["inputs_method"]
+
+      message_data = {
+          "channel": channel,
+          "text": message,
+      }
+
+      message_url = f"https://slack.com/api/{method}"
+
+      response = dict()
+
+      try:
+          response = requests.post(
+              message_url, headers=headers, json=message_data
+          ).json()
+          assert response["ok"]
+
+      except Exception as e:
+          print("error", e)
+
+      finally:
+          pprint.pp(response)
+          response_json = json.dumps(response)
