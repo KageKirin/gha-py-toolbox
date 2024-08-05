@@ -1,0 +1,93 @@
+name: SLACK send message
+description: >-
+  Send a slack chat message
+
+inputs:
+  token:
+    description: >-
+      slack token
+      obtained from a creating a new `app` (in slack terms)
+      @see: 
+    required: true
+  channel:
+    description: channel (#) or user (@) to send message to
+    required: true
+  message:
+    description: message text
+    required: true
+  method:
+    description: >-
+      method name
+      can be either `chat_postMessage` for a regular message
+      or `chat_meMessage` for a `/me` message
+    required: false
+    type: choice
+    options:
+    - chat_postMessage
+    - chat_meMessage
+    default: chat_postMessage
+
+
+outputs:
+  response:
+    description: slack response
+    value: ${{steps.send-message.outputs.response}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        slack_sdk
+
+  - id: send-message
+    name: Parse ${{inputs.version}}
+    shell: python
+    env:
+      SLACK_TOKEN: ${{inputs.token}}
+      inputs_channel: ${{inputs.channel}}
+      inputs_message: ${{inputs.message}}
+      inputs_method: ${{inputs.method}}
+    run: |
+      ## actions/slack/send-message/action.yml#send-message
+      import os, sys, json, pprint
+      from slack_sdk import WebClient
+      from slack_sdk.errors import SlackApiError
+
+      token = os.environ["SLACK_TOKEN"]
+      client = WebClient(token=token)
+
+      channel = os.environ["inputs_channel"]
+      message = os.environ["inputs_message"]
+      method = os.environ["inputs_method"]
+
+      response = dict()
+
+      try:
+          response = getattr(client, method)(channel=channel, text=message)
+          assert response["ok"]
+
+      except SlackApiError as e:
+          assert e.response["ok"] is False
+          assert e.response["error"]  # str like 'invalid_auth', 'channel_not_found'
+          print(f"Got an error: {e.response['error']}")
+          # Also receive a corresponding status_code
+          assert isinstance(e.response.status_code, int)
+          print(f"Received a response status_code: {e.response.status_code}")
+          response = e.response
+
+      finally:
+          response_data = {
+              "ok": response["ok"],
+              "error": response["error"],
+              "status": response.status_code,
+          }
+          pprint.pp(response_data)
+          response_json = json.dumps(response_data)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"response={response_json}")
+              print(f"response={response_json}", file=fh)
