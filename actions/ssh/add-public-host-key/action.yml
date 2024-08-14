@@ -1,0 +1,44 @@
+name: SSH Add Public Host Key
+description: >
+  Action to add a public SSH host key
+
+inputs:
+  hostname:
+    description: >
+      Hostname to add to known hosts in addition.
+
+runs:
+  using: composite
+  steps:
+  - id: create-ssh-folder
+    name: Create .ssh folder and known_hosts
+    shell: python
+    run: |
+      import os, sys
+      from pathlib import Path
+
+      dotssh = Path.home().joinpath(".ssh")
+      Path.mkdir(dotssh, exist_ok=True)
+      assert dotssh.exists()
+      assert dotssh.is_dir()
+
+      known_hosts = dotssh.joinpath("known_hosts")
+      Path.touch(known_hosts, mode=0o600)
+      assert known_hosts.exists()
+      assert known_hosts.is_file()
+
+  - id: ssh-add-public-ssh-host-key
+    name: Add the public SSH host key for ${{ inputs.hostname }}
+    shell: python
+    env:
+      inputs_hostname: ${{ inputs.hostname }}
+    run: |
+      import os, sys
+      from pathlib import Path
+
+      hostname = str(os.getenv("inputs_hostname"))
+      dotssh = Path.home().joinpath(".ssh")
+      known_hosts = dotssh.joinpath("known_hosts")
+
+      keyscanOk = os.system(f"ssh-keyscan {hostname} >> {known_hosts}")
+      assert keyscanOk == 0
