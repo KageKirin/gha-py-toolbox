@@ -1,0 +1,52 @@
+name: SSH Add Public Host Key
+description: >
+  Action to add a public SSH host key
+
+inputs:
+  hostname:
+    description: >
+      Hostname to add to known hosts in addition.
+
+runs:
+  using: composite
+  steps:
+  - id: create-ssh-folder
+    name: Create .ssh folder and known_hosts
+    shell: python
+    run: |
+      ## actions/ssh/add-public-host-key/action.yml#create-ssh-folder
+      import os, sys
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      dotssh = Path.home().joinpath(".ssh")
+      Path.mkdir(dotssh, exist_ok=True)
+      assert dotssh.exists()
+      assert dotssh.is_dir()
+
+      known_hosts = dotssh.joinpath("known_hosts")
+      Path.touch(known_hosts, mode=0o600)
+      assert known_hosts.exists()
+      assert known_hosts.is_file()
+
+  - id: ssh-add-public-ssh-host-key
+    name: Add the public SSH host key for ${{inputs.hostname}}
+    shell: python
+    env:
+      inputs_hostname: ${{inputs.hostname}}
+    run: |
+      ## actions/ssh/add-public-host-key/action.yml#ssh-add-public-ssh-host-key
+      import os, sys
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      hostname = str(os.getenv("inputs_hostname"))
+      dotssh = Path.home().joinpath(".ssh")
+      known_hosts = dotssh.joinpath("known_hosts")
+
+      keyscanOk = os.waitstatus_to_exitcode(
+          os.system(f"ssh-keyscan {hostname} >> {known_hosts}")
+      )
+      assert keyscanOk == 0
