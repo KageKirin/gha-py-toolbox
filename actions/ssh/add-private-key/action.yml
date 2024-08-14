@@ -1,0 +1,32 @@
+name: SSH Add Private Key
+description: >
+  Action to add a private key to a local SSH agent
+
+inputs:
+  ssh-key:
+    description: >
+      SSH key used to fetch the repository. The SSH key is configured with the local
+      git config, which enables your scripts to run authenticated git commands.
+      The post-job step removes the SSH key.
+
+      We recommend using a service account with the least permissions necessary.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - id: ssh-add-private-key
+    name: Add private ssh-key
+    shell: python
+    env:
+      inputs_ssh_key: ${{inputs.ssh-key}}
+    run: |
+      ## actions/ssh/add-private-key/action.yml#ssh-add-private-key
+      import os, sys
+
+      ssh_key = str(os.getenv("inputs_ssh_key"))
+
+      addOk = os.waitstatus_to_exitcode(
+          os.system(f'eval $(ssh-agent) && ssh-add - <<< "{ssh_key}"')
+      )
+      assert addOk == 0
