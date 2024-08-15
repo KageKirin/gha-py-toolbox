@@ -162,6 +162,12 @@ runs:
       set-safe-directory: ${{ inputs.set-safe-directory }}
       github-server-url: ${{ inputs.github-server-url }}
 
+  - id: restore
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/restore@main
+    with:
+      path: ${{ inputs.path }}
+      projects: ${{ inputs.projects }}
+
   - id: build
     uses: kagekirin/gha-py-toolbox/actions/dotnet/build@main
     with:
