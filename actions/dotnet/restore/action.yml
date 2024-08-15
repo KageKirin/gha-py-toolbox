@@ -1,0 +1,123 @@
+name: .NET Restore
+description: >
+  Script to restore (i.e. load) the dependencies .NET Solution or Projects before
+  building
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  projects:
+    description: >
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+  cache:
+    description: >
+      path(s) to cache for nuget packages.
+      empty (default): no cache
+    required: false
+    default: ''
+
+
+
+runs:
+  using: composite
+  steps:
+  - id: prepare-cache-hash
+    if: ${{inputs.cache != ''}}
+    name: Prepare cache hash
+    shell: python
+    env:
+      build_ref: ${{github.ref}}
+      build_base: ${{github.base_ref}}
+      build_head: ${{github.head_ref}}
+      build_sha: ${{github.sha}}
+      build_cache: ${{inputs.cache}}
+      build_path: ${{inputs.path}}
+      build_projects: ${{inputs.projects}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/restore/action.yml#prepare-cache-hash
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with Path(".restorecache").open("w") as fh:
+          print(str(os.getenv("build_ref")), fh)
+          print(str(os.getenv("build_base")), fh)
+          print(str(os.getenv("build_head")), fh)
+          print(str(os.getenv("build_sha")), fh)
+          print(str(os.getenv("build_cache")), fh)
+          print(str(os.getenv("build_path")), fh)
+          print(str(os.getenv("build_projects")), fh)
+          print(str(os.getenv("build_options")), fh)
+
+  - id: cache
+    if: ${{inputs.cache != ''}}
+    name: Cache packages
+    uses: actions/cache@v4
+    env:
+      cache-name: cache-nuget-packages
+    with:
+      path: ${{inputs.cache}}
+      key: ${{runner.os}}-restore-${{env.cache-name}}-${{github.sha}}-${{hashFiles('.restorecache','**/*.csproj','**/*.props','**/*.targets')}}
+      restore-keys: |
+        ${{runner.os}}-restore-${{env.cache-name}}-${{github.sha}}-${{hashFiles('.restorecache','**/*.csproj','**/*.props','**/*.targets')}}
+        ${{runner.os}}-restore-${{env.cache-name}}-${{github.sha}}-
+        ${{runner.os}}-restore-${{env.cache-name}}-
+        ${{runner.os}}-restore-
+
+  - id: restore
+    name: Restore
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      build_projects: ${{inputs.projects}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/restore/action.yml#restore
+      import os, sys, itertools, subprocess, pprint
+      from pathlib import Path
+      from contextlib import chdir
+      from subprocess import CalledProcessError
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(str(os.getenv("build_path"))):
+          options = " ".join(list(str(os.getenv("build_options")).split()))
+          projects = str(os.getenv("build_projects")).split()
+          projects = [
+              p
+              for p in map(
+                  lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects
+              )
+          ]
+          projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+
+          if len(projects) == 0:
+              projects.append("")
+
+          err = 0
+          for project in projects:
+              try:
+                  print(f"restoring {project}")
+                  command = f"dotnet restore {project} --disable-parallel {options}"
+                  print(command)
+                  # pprint.pp(os.environ)
+                  subprocess.check_call(command.split())
+              except CalledProcessError as ex:
+                  print(f"ERROR: {ex}")
+                  err = ex.returncode
+          exit(err)
