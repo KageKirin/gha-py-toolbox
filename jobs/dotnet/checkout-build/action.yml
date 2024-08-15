@@ -32,6 +32,19 @@ inputs:
     required: false
     default: ''
 
+  restore-options:
+    description: >
+      supplementary command line options forwarded to `dotnet restore`
+      whitespace separated list.
+    required: false
+    default: ''
+  build-options:
+    description: >
+      supplementary command line options forwarded to `dotnet build`
+      whitespace separated list.
+    required: false
+    default: ''
+
   ## inputs from actions/checkout@v4
   repository:
     description: Repository name with owner. For example, actions/checkout
@@ -41,6 +54,7 @@ inputs:
       The branch, tag or SHA to checkout. When checking out the repository that
       triggered a workflow, this defaults to the reference or SHA for that
       event.  Otherwise, uses the default branch.
+    default: ${{github.ref}}
   token:
     description: >
       Personal access token (PAT) used to fetch the repository. The PAT is configured
@@ -163,6 +177,13 @@ runs:
       set-safe-directory: ${{inputs.set-safe-directory}}
       github-server-url: ${{inputs.github-server-url}}
 
+  - id: restore
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/restore@main
+    with:
+      path: ${{inputs.path}}
+      projects: ${{inputs.projects}}
+      options: ${{inputs.restore-options}}
+
   - id: build
     uses: kagekirin/gha-py-toolbox/actions/dotnet/build@main
     with:
@@ -170,3 +191,4 @@ runs:
       projects: ${{inputs.projects}}
       configurations: ${{inputs.configurations}}
       frameworks: ${{inputs.frameworks}}
+      options: ${{inputs.build-options}}
