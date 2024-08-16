@@ -1,0 +1,34 @@
+name: SSH Get Public Host Key
+description: >
+  Action to get a public SSH host key
+
+inputs:
+  hostname:
+    description: >
+      Hostname to get the known_hosts entry for.
+
+outputs:
+  known_hosts:
+    description: >
+      known_hosts entry
+    value: ${{steps.ssh-get-public-ssh-host-key.outputs.known_hosts}}
+
+runs:
+  using: composite
+  steps:
+
+  - id: ssh-get-public-ssh-host-key
+    name: Get the public SSH host key for ${{inputs.hostname}}
+    shell: python
+    env:
+      inputs_hostname: ${{inputs.hostname}}
+    run: |
+      ## actions/ssh/get-public-host-key/action.yml#ssh-get-public-ssh-host-key
+      import os, sys, shlex, subprocess
+
+      hostname = str(os.getenv("inputs_hostname"))
+      known_hosts = subprocess.check_output(["ssh-keyscan", hostname]).decode()
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"known_hosts={known_hosts}")
+          print(f"known_hosts={known_hosts}", file=fh)
