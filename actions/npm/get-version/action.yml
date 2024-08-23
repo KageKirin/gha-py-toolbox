@@ -1,0 +1,64 @@
+name: NPM get package.json version
+description: >-
+  Retrieves the .version of a package.json file
+  Validates version for semver-compatibility
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  package-json:
+    description: relative path to package.json
+    required: false
+    default: package.json
+
+outputs:
+  version:
+    description: the version that was set after validation
+    value: ${{steps.get-version.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        semver
+
+  - id: get-version
+    name: Get ${{inputs.path}} .version
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_package_json: ${{inputs.package-json}}
+    run: |
+      ## actions/npm/get-version/action.yml#get-version
+      import os, sys, shlex, json, semver
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      packageJsonFile = Path(os.getenv("inputs_path")).joinpath(
+          os.getenv("inputs_package_json")
+      )
+      assert packageJsonFile is not None
+      if not packageJsonFile.exists():
+          exit(1)
+
+      packageJson = json.loads(packageJsonFile.read_text())
+      assert packageJson is not None
+      print(packageJson["version"])
+      if packageJson == None:
+          exit(2)
+
+      version = semver.Version.parse(packageJson["version"])
+      assert version is not None
+      print(version)
+      if version == None:
+          exit(3)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"version={version}")
+          print(f"version={version}", file=fh)
