@@ -1,0 +1,72 @@
+name: NPM set package.json version
+description: >-
+  Sets the .version of a package.json file to the given parameter, after validating
+  it as Semver-compatible
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  package-json:
+    description: relative path to package.json
+    required: false
+    default: package.json
+  version:
+    description: version to set
+    required: true
+
+outputs:
+  version:
+    description: the version that was set after validation
+    value: ${{steps.set-version.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        semver
+
+  - id: set-version
+    name: Set ${{inputs.package-json}} .version to ${{inputs.version}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_package_json: ${{inputs.package-json}}
+      inputs_version: ${{inputs.version}}
+    run: |
+      ## actions/npm/set-version/action.yml#set-version
+      import os, sys, json, semver
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      version = semver.Version.parse(os.getenv("inputs_version"))
+      assert version is not None
+      print(version)
+      if version == None:
+          exit(1)
+
+      packageJsonFile = Path(os.getenv("inputs_path")).joinpath(
+          os.getenv("inputs_package_json")
+      )
+      assert packageJsonFile is not None
+      if not packageJsonFile.exists():
+          exit(2)
+
+      packageJson = json.loads(packageJsonFile.read_text())
+      assert packageJson is not None
+      print(packageJson["version"])
+      if packageJson == None:
+          exit(3)
+
+      packageJson["version"] = f"{version}"
+      print(packageJson["version"])
+      packageJsonFile.write_text(json.dumps(packageJson, indent=2))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"version={version}")
+          print(f"version={version}", file=fh)
