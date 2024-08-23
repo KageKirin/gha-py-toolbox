@@ -1,0 +1,65 @@
+name: SEMVER compare
+description: >-
+  Compare 2 semver versions and return the greater and lower ones.
+
+inputs:
+  version_A:
+    description: version to parse
+    required: true
+  version_B:
+    description: version to parse
+    required: true
+
+outputs:
+  greater:
+    description: the greater version
+    value: ${{steps.compare-versions.outputs.greater}}
+  lower:
+    description: version minor
+    value: ${{steps.compare-versions.outputs.lower}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        semver
+
+  - id: compare-versions
+    name: Parse ${{inputs.version}}
+    shell: python
+    env:
+      inputs_version_A: ${{inputs.version_A}}
+      inputs_version_B: ${{inputs.version_B}}
+    run: |
+      ## actions/semver/compare/action.yml#compare-versions
+      import os, sys, shlex, semver
+
+      versionA = semver.Version.parse(os.getenv("inputs_version_A"))
+      print(versionA)
+      if versionA == None:
+          exit(1)
+
+      versionB = semver.Version.parse(os.getenv("inputs_version_B"))
+      print(versionB)
+      if versionB == None:
+          exit(2)
+
+      greater = versionA
+      lower = versionA
+
+      if versionA.compare(versionB) <= 0:
+          greater = versionB
+          lower = versionA
+      else:
+          greater = versionA
+          lower = versionB
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"greater={greater}")
+          print(f"greater={greater}", file=fh)
+          print(f"lower={lower}")
+          print(f"lower={lower}", file=fh)
