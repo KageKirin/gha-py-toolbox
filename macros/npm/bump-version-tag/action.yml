@@ -1,7 +1,6 @@
-name: NPM Bump Version Tag
+name: NPM Bump Version and Tag
 description: >-
-  Macro to bump a package.json version to the next version.
-
+  Macro to bump a package.json version to the next version and tag the commit.
 
 
 inputs:
@@ -77,48 +76,22 @@ outputs:
 runs:
   using: composite
   steps:
-  - id: git-version
-    name: Get latest version tag from git
-    uses: kagekirin/gha-py-toolbox/actions/git/get-latest-version-tag@main
-    with:
-      path: ${{inputs.path}}
-
-  - id: npm-version
-    name: Get version from ${{inputs.package-json}}
-    uses: kagekirin/gha-py-toolbox/actions/npm/get-version@main
-    with:
-      path: ${{inputs.path}}
-      package-json: ${{inputs.package-json}}
-
-  - id: compare
-    name: Compare ${{steps.git-version.outputs.version}} against ${{steps.npm-version.outputs.version}}
-    uses: kagekirin/gha-py-toolbox/actions/semver/compare@main
-    with:
-      version_A: ${{steps.git-version.outputs.version}}
-      version_B: ${{steps.npm-version.outputs.version}}
-
   - id: bump-version
-    name: Compute next version from ${{steps.compare.outputs.greater}}
-    uses: kagekirin/gha-py-toolbox/actions/semver/bump-version@main
+    name: Bump package.json version
+    uses: kagekirin/gha-py-toolbox/macros/npm/bump-version@main
     with:
       version: ${{steps.compare.outputs.greater}}
-      bump_patch: true
-      finalize: true
-
-  - id: update-package-json
-    name: Update ${{inputs.package-json}}
-    uses: kagekirin/gha-py-toolbox/actions/npm/set-version@main
-    with:
       path: ${{inputs.path}}
       package-json: ${{inputs.package-json}}
-      version: ${{steps.bump-version.outputs.version}}
-
-  - id: commit-am
-    name: Commit changes
-    uses: kagekirin/gha-py-toolbox/actions/git/commit-all-modified@main
-    with:
-      path: ${{inputs.path}}
-      message: ${{inputs.commit-message}} v${{steps.bump-version.outputs.version}}
+      commit-message: ${{inputs.commit-message}}
+      bump_major: ${{inputs.bump_major}}
+      bump_minor: ${{inputs.bump_minor}}
+      bump_patch: ${{inputs.bump_patch}}
+      bump_prerelease: ${{inputs.bump_prerelease}}
+      set_prerelease: ${{inputs.set_prerelease}}
+      set_build: ${{inputs.set_build}}
+      finalize: ${{inputs.finalize}}
+      numerical_limit: ${{inputs.numerical_limit}}
 
   - id: tag-commit
     name: Tag HEAD
