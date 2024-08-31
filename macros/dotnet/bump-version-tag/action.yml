@@ -37,9 +37,9 @@ outputs:
 runs:
   using: composite
   steps:
-  - id: latest-tag
+  - id: highest-tag
     name: Get latest version tag
-    uses: kagekirin/gha-py-toolbox/actions/git/get-latest-version-tag@main
+    uses: kagekirin/gha-py-toolbox/actions/git/get-highest-semver-tag@main
     with:
       path: ${{inputs.path}}
 
@@ -47,7 +47,7 @@ runs:
     name: Compute next version
     uses: kagekirin/gha-py-toolbox/actions/semver/bump-version@main
     with:
-      version: ${{steps.latest-tag.outputs.version}}
+      version: ${{steps.highest-tag.outputs.version}}
       bump_patch: true
 
   - id: update-projects
