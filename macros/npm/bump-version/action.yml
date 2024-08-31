@@ -72,7 +72,7 @@ runs:
   steps:
   - id: git-version
     name: Get latest version tag from git
-    uses: kagekirin/gha-py-toolbox/actions/git/get-latest-version-tag@main
+    uses: kagekirin/gha-py-toolbox/actions/git/get-highest-semver-tag@main
     with:
       path: ${{inputs.path}}
 
