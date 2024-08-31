@@ -46,7 +46,8 @@ inputs:
     required: false
     default: ''
   finalize:
-    description: any prerelease and build metadata from the version (e.g. '1.2.3-rc.0+foobar' -> '1.2.3')
+    description: any prerelease and build metadata from the version (e.g. '1.2.3-rc.0+foobar'
+      -> '1.2.3')
     required: false
     default: 'false'
   numerical_limit:
@@ -72,7 +73,7 @@ runs:
   steps:
   - id: git-version
     name: Get latest version tag from git
-    uses: kagekirin/gha-py-toolbox/actions/git/get-latest-version-tag@main
+    uses: kagekirin/gha-py-toolbox/actions/git/get-highest-semver-tag@main
     with:
       path: ${{inputs.path}}
 
