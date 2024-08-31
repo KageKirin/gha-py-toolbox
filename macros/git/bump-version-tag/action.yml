@@ -9,8 +9,7 @@ inputs:
     required: false
     default: ${{github.workspace}}
   tag-version-format:
-    description: Python regex to identify a tag as version and retrieve said version
-      from said tag
+    description: Python regex to identify a tag as version and retrieve said version from said tag
     required: false
     default: v(\d+\.\d+\.\d+)
 
@@ -78,18 +77,18 @@ outputs:
 runs:
   using: composite
   steps:
-  - id: get-latest-version-tag
+  - id: get-highest-semver-tag
     name: Get latest version tag
-    uses: kagekirin/gha-py-toolbox/actions/git/get-latest-version-tag@main
+    uses: kagekirin/gha-py-toolbox/actions/git/get-highest-semver-tag@main
     with:
       path: ${{inputs.path}}
       tag-version-format: ${{inputs.tag-version-format}}
 
   - id: bump-version
-    name: Bump ${{steps.get-latest-version-tag.outputs.version}}
+    name: Bump ${{steps.get-highest-semver-tag.outputs.version}}
     uses: kagekirin/gha-py-toolbox/actions/semver/bump-version@main
     with:
-      version: ${{steps.get-latest-version-tag.outputs.version}}
+      version: ${{steps.get-highest-semver-tag.outputs.version}}
       bump_major: ${{inputs.bump_major}}
       bump_minor: ${{inputs.bump_minor}}
       bump_patch: ${{inputs.bump_patch}}
