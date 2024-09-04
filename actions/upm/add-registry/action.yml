@@ -1,0 +1,39 @@
+name: UPM add registry
+description: >-
+  Adds the provided authentification information to ~/.upmconfig.toml
+
+inputs:
+  registry:
+    description: >
+      UPM registry
+      aka NPM registry
+    required: true
+  token:
+    description: >
+      The authorization token
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - id: add-to-upmconfig-toml
+    name: Add ${{inputs.registry}} to upmconfig.toml
+    shell: python
+    env:
+      registry: ${{inputs.registry}}
+      token: ${{inputs.token}}
+    run: |
+      import os, sys
+      from pathlib import Path
+
+      registry = str(os.getenv("registry"))
+      assert registry is not None
+
+      token = str(os.getenv("token"))
+      assert token is not None
+
+      with open(Path.joinpath(Path.home(), ".upmconfig.toml"), "a") as fh:
+          print(f'[npmAuth."{registry}"]')
+          print(f'[npmAuth."{registry}"]', file=fh)
+          print(f'token = "{token}"')
+          print(f'token = "{token}"\n', file=fh)
