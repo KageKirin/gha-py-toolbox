@@ -1,0 +1,28 @@
+name: GCLOUD setup
+description: >-
+  Installs Google Cloud CLI
+
+
+runs:
+  using: composite
+  steps:
+  - id: fetch-gcloud-cli-installer
+    name: Fetch Google Cloud CLI installer
+    shell: python
+    run: |
+      import os
+
+      os.system("curl https://sdk.cloud.google.com > gcloud-install.sh")
+  # TODO: restore cache
+  - id: install-gcloud-cli
+    name: Install Google Cloud CLI
+    shell: python
+    run: |
+      import os, sys, subprocess
+      from pathlib import Path
+
+      subprocess.check_call(
+          ["gcloud-install.sh", "--disable-prompts", "--install-dir=.gcloudcli"]
+      )
+      subprocess.check_call(["which", "gcloud"])
+      subprocess.check_call(["gcloud", "--version"])
