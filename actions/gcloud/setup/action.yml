@@ -1,0 +1,61 @@
+name: GCLOUD setup
+description: >-
+  Installs Google Cloud CLI
+
+
+runs:
+  using: composite
+  steps:
+  - id: fetch-gcloud-cli-installer
+    name: Fetch Google Cloud CLI installer
+    shell: python
+    run: |
+      ## actions/gcloud/setup/action.yml#fetch-gcloud-cli-installer
+      import os
+      from pathlib import Path
+
+      os.system(
+          "curl -L --retry 100 --retry-max-time 500 --retry-all-errors https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz | tar -xz"
+      )
+      assert Path("google-cloud-sdk").is_dir()
+      assert Path("google-cloud-sdk/install.sh").is_file()
+  # TODO: restore cache
+  - id: install-gcloud-cli
+    name: Install Google Cloud CLI
+    shell: python
+    run: |
+      ## actions/gcloud/setup/action.yml#install-gcloud-cli
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      os.system("google-cloud-sdk/install.sh --help")
+      err = os.waitstatus_to_exitcode(
+          os.system(
+              "google-cloud-sdk/install.sh --quiet --command-completion true --path-update true"
+          )
+      )
+
+      # os.system("cat google-cloud-sdk/path.bash.inc")
+
+      google_cloud_sdk_bin = Path("google-cloud-sdk").joinpath("bin").absolute()
+      with open(os.environ["GITHUB_PATH"], "a") as fh:
+          print(f"{google_cloud_sdk_bin}")
+          print(f"{google_cloud_sdk_bin}", file=fh)
+
+      exit(err)
+
+
+  - id: verify-gcloud-cli
+    name: Verify Google Cloud CLI
+    shell: python
+    run: |
+      ## actions/gcloud/setup/action.yml#verify-gcloud-cli
+      import os, sys, shlex, subprocess, shutil
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      print(shutil.which("gcloud"))
+      err = os.waitstatus_to_exitcode(os.system("gcloud --version"))
+      exit(err)
