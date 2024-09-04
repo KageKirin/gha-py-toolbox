@@ -1,0 +1,209 @@
+name: UNITY direct setup
+description: >-
+  Downloads and installs Unity at the given version/changeset and for the given platform
+  using the release tarballs.
+
+  This version relies on curl and tar by piping the download/output from curl directly
+  into tar.
+
+  **WARNING: only Linux supported for now**
+
+  NOTE: this is the fastest installer, takes ~3min.
+  **CAVEAT: only supports components packed as .tar.xz, i.e. components packed as .pkg are not supported.**
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  version:
+    description: >-
+      Unity version to install.
+      Refer to https://unity.com/releases/editor/archive for the correct version.
+    required: true
+    default: 2021.3.21f1
+  changeset:
+    description: >-
+      Unity changeset to install.
+      Refer to https://unity.com/releases/editor/archive for the correct changeset.
+
+      NOTE: The changeset is part of the actual download URL, i.e. https://download.unity3d.com/download_unity/{changeset}
+      e.g.: https://download.unity3d.com/download_unity/1b156197d683/LinuxEditorInstaller/Unity-2021.3.21f1.tar.xz
+    required: true
+    default: 1b156197d683
+  components:
+    description: >-
+      List of Unity components to install.
+
+      Multiline, use whitespace/newline to separate items.
+    required: true
+    default: |
+      Linux-IL2CPP
+      Linux-Server
+      WebGL
+  unity-path:
+    description: path where to install Unity to
+    required: true
+    default: .unity
+  unity-temp:
+    description: temp path where to download Unity installers to
+    required: true
+    default: .unitysetup
+  verbose:
+    description: verbose output for both curl and tar (default is false)
+    required: true
+    default: 'false'
+
+
+outputs:
+  unity-exe:
+    description: full path to Unity executable
+    value: ${{steps.get-unity-exe.outputs.unity-exe}}
+  editor-path:
+    description: full path to Unity installation folder
+    value: ${{steps.get-unity-exe.outputs.editor-path}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download-url
+    name: Generate download URL for Unity ${{inputs.version}} and ${{inputs.changeset}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      unity_changeset: ${{inputs.changeset}}
+      unity_baseurl: https://download.unity3d.com/download_unity/
+    run: |
+      ## actions/unity/direct-setup/action.yml#download-url
+      import os, sys
+      from urllib.parse import urlparse
+      from posixpath import join
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(os.getenv("inputs_path", ".")):
+          unity_version = str(os.getenv("unity_version"))
+          unity_changeset = str(os.getenv("unity_changeset"))
+
+          unity_baseurl = str(os.getenv("unity_baseurl"))
+          assert unity_baseurl is not None
+          assert urlparse(unity_baseurl) is not None
+
+          installer_url = join(unity_baseurl, unity_changeset)
+          assert installer_url is not None
+          assert urlparse(installer_url) is not None
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"url={installer_url}")
+              print(f"url={installer_url}", file=fh)
+
+
+  - id: download-unpack-editor
+    name: Download Unity Editor from ${{steps.download-url.outputs.url}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      download_url: ${{steps.download-url.outputs.url}}
+      unity_version: ${{inputs.version}}
+      unity_path: ${{inputs.unity-path}}
+      verbose: ${{inputs.verbose}}
+    run: |
+      ## actions/unity/direct-setup/action.yml#download-unpack-editor
+      import os, sys
+      from pathlib import Path
+      from contextlib import chdir
+      from urllib.parse import urlparse
+      from posixpath import join
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      verbose = str(os.getenv("verbose")) == "true"
+      curl_verbose = "--verbose" if verbose else "--silent"
+      tar_verbose = "--verbose" if verbose else ""
+
+      unity_path = Path(os.getenv("unity_path"))
+      unity_path.mkdir(parents=True, exist_ok=True)
+      unity_version = str(os.getenv("unity_version"))
+
+      download_url = str(os.getenv("download_url"))
+      assert download_url is not None
+      assert urlparse(download_url) is not None
+
+      editor_url = join(
+          download_url, "LinuxEditorInstaller", f"Unity-{unity_version}.tar.xz"
+      )
+      assert editor_url is not None
+      assert urlparse(editor_url) is not None
+
+      with chdir(unity_path):
+          cmd = f"curl -L --retry 100 --retry-max-time 500 --fail-with-body --retry-all-errors {curl_verbose} {editor_url} | tar xJ {tar_verbose}"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
+
+  - id: download-unpack-components
+    name: Download Unity Components from ${{steps.download-url.outputs.url}}
+    shell: python
+    env:
+      download_url: ${{steps.download-url.outputs.url}}
+      unity_version: ${{inputs.version}}
+      unity_components: ${{inputs.components}}
+      unity_path: ${{inputs.unity-path}}
+      verbose: ${{inputs.verbose}}
+    run: |
+      ## actions/unity/direct-setup/action.yml#download-unpack-components
+      import os, sys, requests, shutil
+      from pathlib import Path
+      from contextlib import chdir
+      from urllib.parse import urlparse
+      from posixpath import join
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      verbose = str(os.getenv("verbose")) == "true"
+      curl_verbose = "--verbose" if verbose else "--silent"
+      tar_verbose = "--verbose" if verbose else ""
+
+      unity_path = Path(os.getenv("unity_path"))
+      assert unity_path.is_dir()
+
+      unity_version = str(os.getenv("unity_version"))
+      unity_components = set(str(os.getenv("unity_components")).split())
+      download_url = str(os.getenv("download_url"))
+      assert download_url is not None
+      assert urlparse(download_url) is not None
+
+      with chdir(unity_path):
+          err = 0
+          for component in unity_components:
+              component_url = join(
+                  download_url,
+                  "LinuxEditorTargetInstaller",
+                  f"UnitySetup-{component}-Support-for-Editor-{unity_version}.tar.xz",
+              )
+              assert component_url is not None
+              assert urlparse(component_url) is not None
+
+              cmd = f"curl -L --retry 100 --retry-max-time 500 --fail-with-body --retry-all-errors {curl_verbose} {component_url} | tar xJ {tar_verbose}"
+              print(cmd, flush=True)
+              err = os.waitstatus_to_exitcode(os.system(cmd))
+              if err != 0:
+                  print(f"failed to to download {component_url}")
+                  break
+
+          exit(err)
+
+  - id: get-unity-exe
+    name: Get Unity executable
+    uses: kagekirin/gha-py-toolbox/actions/unity/get-unity-exe@main
+    with:
+      unity-path: ${{inputs.unity-path}}
