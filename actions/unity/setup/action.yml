@@ -1,0 +1,249 @@
+name: UNITY setup
+description: >-
+  Downloads and installs Unity at the given version/changeset and for the given platform
+  using the release tarballs.
+
+  **WARNING: only Linux supported for now**
+  **CAVEAT: only supports components packed as .tar.xz, i.e. components packed as .pkg are not supported.**
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  version:
+    description: >-
+      Unity version to install.
+      Refer to https://unity.com/releases/editor/archive for the correct version.
+    required: true
+    default: 2021.3.21f1
+  changeset:
+    description: >-
+      Unity changeset to install.
+      Refer to https://unity.com/releases/editor/archive for the correct changeset.
+
+      NOTE: The changeset is part of the actual download URL, i.e. https://download.unity3d.com/download_unity/{changeset}
+      e.g.: https://download.unity3d.com/download_unity/1b156197d683/LinuxEditorInstaller/Unity-2021.3.21f1.tar.xz
+    required: true
+    default: 1b156197d683
+  components:
+    description: >-
+      List of Unity components to install.
+
+      Multiline, use whitespace/newline to separate items.
+    required: true
+    default: |
+      Linux-IL2CPP
+      Linux-Server
+      WebGL
+  unity-path:
+    description: path where to install Unity to
+    required: true
+    default: .unity
+  unity-temp:
+    description: temp path where to download Unity installers to
+    required: true
+    default: .unitysetup
+
+
+outputs:
+  unity-exe:
+    description: full path to Unity executable
+    value: ${{steps.get-unity-exe.outputs.unity-exe}}
+  editor-path:
+    description: full path to Unity installation folder
+    value: ${{steps.get-unity-exe.outputs.editor-path}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download-url
+    name: Generate download URL for Unity ${{inputs.version}} and ${{inputs.changeset}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      unity_changeset: ${{inputs.changeset}}
+      unity_baseurl: https://download.unity3d.com/download_unity/
+    run: |
+      ## actions/unity/setup/action.yml#download-url
+      import os, sys
+      from urllib.parse import urlparse
+      from posixpath import join
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      unity_version = str(os.getenv("unity_version"))
+      unity_changeset = str(os.getenv("unity_changeset"))
+
+      unity_baseurl = str(os.getenv("unity_baseurl"))
+      assert unity_baseurl is not None
+      assert urlparse(unity_baseurl) is not None
+
+      installer_url = join(unity_baseurl, unity_changeset)
+      assert installer_url is not None
+      assert urlparse(installer_url) is not None
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"url={installer_url}")
+          print(f"url={installer_url}", file=fh)
+
+
+  - id: download-editor
+    name: Download Unity Editor from ${{steps.download-url.outputs.url}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      download_url: ${{steps.download-url.outputs.url}}
+      unity_version: ${{inputs.version}}
+      unity_temp: ${{inputs.unity-temp}}
+    run: |
+      ## actions/unity/setup/action.yml#download-editor
+      import os, sys, shlex, requests, shutil
+      from pathlib import Path
+      from urllib.parse import urlparse
+      from posixpath import join
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      unity_temp = Path(os.getenv("unity_temp"))
+      unity_temp.mkdir(parents=True, exist_ok=True)
+      unity_version = str(os.getenv("unity_version"))
+
+      download_url = str(os.getenv("download_url"))
+      assert download_url is not None
+      assert urlparse(download_url) is not None
+
+      editor_url = join(
+          download_url,
+          "LinuxEditorInstaller",
+          f"Unity-{unity_version}.tar.xz",
+      )
+      assert editor_url is not None
+      assert urlparse(editor_url) is not None
+
+      editor_path = Path.joinpath(unity_temp, Path(editor_url).name)
+
+      with requests.get(editor_url, stream=True) as r:
+          if not r.ok:
+              print(
+                  f"failed to access {editor_url} with status {r.status_code} {r.reason}"
+              )
+          assert r.ok
+          if r.ok:
+              with editor_path.open("wb") as fh:
+                  shutil.copyfileobj(r.raw, fh)
+
+      unity_temp_contents = list(unity_temp.rglob("*.*"))
+      print(f"contents of {unity_temp}: {unity_temp_contents}")
+
+  - id: download-components
+    name: Download Unity Components from ${{steps.download-url.outputs.url}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      download_url: ${{steps.download-url.outputs.url}}
+      unity_version: ${{inputs.version}}
+      unity_components: ${{inputs.components}}
+      unity_temp: ${{inputs.unity-temp}}
+    run: |
+      ## actions/unity/setup/action.yml#download-components
+      import os, sys, shlex, requests, shutil
+      from pathlib import Path
+      from urllib.parse import urlparse
+      from posixpath import join
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      unity_temp = Path(os.getenv("unity_temp"))
+      unity_temp.mkdir(parents=True, exist_ok=True)
+
+      unity_version = str(os.getenv("unity_version"))
+      unity_components = set(str(os.getenv("unity_components")).split())
+
+      download_url = str(os.getenv("download_url"))
+      assert download_url is not None
+      assert urlparse(download_url) is not None
+
+      for component in unity_components:
+          component_url = join(
+              download_url,
+              "LinuxEditorTargetInstaller",
+              f"UnitySetup-{component}-Support-for-Editor-{unity_version}.tar.xz",
+          )
+          assert component_url is not None
+          assert urlparse(component_url) is not None
+
+          component_path = Path.joinpath(unity_temp, Path(component_url).name)
+
+          with requests.get(component_url, stream=True) as r:
+              if not r.ok:
+                  print(
+                      f"failed to access {component_url} with status {r.status_code} {r.reason}"
+                  )
+              assert r.ok
+              if r.ok:
+                  with component_path.open("wb") as fh:
+                      shutil.copyfileobj(r.raw, fh)
+
+      unity_temp_contents = list(unity_temp.rglob("*.*"))
+      print(f"contents of {unity_temp}: {unity_temp_contents}")
+
+
+  - id: unpack
+    name: Unpack from ${{inputs.unity-temp}} into ${{inputs.unity-path}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      unity_version: ${{inputs.version}}
+      unity_components: ${{inputs.components}}
+      unity_temp: ${{inputs.unity-temp}}
+      unity_path: ${{inputs.unity-path}}
+    run: |
+      ## actions/unity/setup/action.yml#unpack
+      import os, sys, shlex, shutil
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      unity_temp = Path(os.getenv("unity_temp"))
+      unity_temp.mkdir(parents=True, exist_ok=True)
+      unity_temp_contents = list(unity_temp.rglob("*.*"))
+      print(f"contents of {unity_temp}: {unity_temp_contents}")
+
+      unity_path = Path(os.getenv("unity_path"))
+      unity_path.mkdir(parents=True, exist_ok=True)
+      unity_path_contents = list(unity_path.rglob("*.*"))
+      print(f"contents of {unity_path}: {unity_path_contents}")
+      os.system(f"ls -alG {unity_path}")
+
+      unity_version = str(os.getenv("unity_version"))
+      unity_components = set(str(os.getenv("unity_components")).split())
+
+      components = [f"Unity-{unity_version}.tar.xz"]
+      components += map(
+          lambda x: f"UnitySetup-{x}-{unity_version}.tar.xz", unity_components
+      )
+      print(f"components to install: {components}")
+
+      for component in components:
+          for archive in [r for r in unity_temp_contents if component == r.name]:
+              print(f"extracting: {archive} for {component}")
+              shutil.unpack_archive(archive, unity_path.absolute())
+
+      unity_path_contents = list(unity_path.rglob("*.*"))
+      print(f"contents of {unity_path}: {unity_path_contents}")
+
+  - id: get-unity-exe
+    name: Get Unity executable
+    uses: kagekirin/gha-py-toolbox/actions/unity/get-unity-exe@main
+    with:
+      unity-path: ${{inputs.unity-path}}
