@@ -1,0 +1,110 @@
+name: UNITY activate license
+description: >-
+  Activate a Unity license.
+
+  NOTE: this action has a post action to return the license.
+
+inputs:
+  unity-path:
+    description: >-
+      Path to Unity executable.
+      This value is usually returned by the setup action.
+    required: true
+
+  unity-email:
+    description: >-
+      User email required to activate license.
+    required: true
+  unity-password:
+    description: >-
+      User password required to activate license.
+    required: true
+  unity-serial:
+    description: >-
+      User serial required to activate license.
+    required: false
+  unity-license-file:
+    description: >-
+      User license file (.ulf) required to activate license.
+    required: false
+
+runs:
+  using: composite
+  steps:
+  - id: activate-license
+    uses: kagekirin/gha-py-toolbox/actions/util/post@main
+    name: Activate License
+    with:
+      shell: python
+      main: |
+        import os, sys, subprocess
+        from pathlib import Path
+
+        unity_path = Path(os.getenv("INPUT_UNITY_PATH"))
+        assert unity_path
+        assert unity_path.is_file()
+
+        unity_email = str(os.getenv("INPUT_UNITY_EMAIL"))
+        assert unity_email
+
+        unity_password = str(os.getenv("INPUT_UNITY_PASSWORD"))
+        assert unity_password
+
+        unity_serial = str(os.getenv("INPUT_UNITY_SERIAL"))
+        unity_license_file = str(os.getenv("INPUT_UNITY_LICENSE_FILE"))
+
+        print(f"registering Unity license for {unity_email}")
+
+        if unity_serial:
+          print(f"registering using serial {unity_serial}")
+          subprocess.check_call([
+            unity_path.absolute(),
+            "-quit",
+            "-nographics",
+            "-batchmode",
+            "-logFile", "-",
+            "-serial",  unity_serial,
+            "-username",  unity_email,
+            "-password",  unity_password,
+          ])
+
+        else if unity_license_file:
+          print(f"registering using license file {unity_license_file}")
+          Path("license.ulf").write_text(unity_license_file)
+          subprocess.check_call([
+            unity_path.absolute(),
+            "-quit",
+            "-nographics",
+            "-batchmode",
+            "-logFile", "-",
+            "-manualLicenseFile",  "license.ulf",
+            "-username",  unity_email,
+            "-password",  unity_password,
+          ])
+
+
+      post: |
+        import os, sys, subprocess
+        from pathlib import Path
+
+        unity_path = Path(os.getenv("INPUT_UNITY_PATH"))
+        assert unity_path
+        assert unity_path.is_file()
+
+        unity_email = str(os.getenv("INPUT_UNITY_EMAIL"))
+        assert unity_email
+
+        unity_password = str(os.getenv("INPUT_UNITY_PASSWORD"))
+        assert unity_password
+
+        print(f"returning Unity license for {unity_email}")
+        subprocess.check_call([
+            unity_path.absolute(),
+            "-quit",
+            "-nographics",
+            "-batchmode",
+            "-logFile", "-",
+            "-returnlicense",
+            "-username",  unity_email,
+            "-password",  unity_password,
+          ])
