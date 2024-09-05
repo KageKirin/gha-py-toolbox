@@ -1,0 +1,20 @@
+name: UTIL Action with post step
+description: >-
+  Action going through JS Action to execute a main command and set a command as a
+  post step.
+
+inputs:
+  shell:
+    description: shell to run commands in
+    required: true
+  main:
+    description: Main command/script.
+    required: true
+  post:
+    description: Post command/script.
+    required: true
+
+runs:
+  using: node20
+  main: main.js
+  post: post.js
