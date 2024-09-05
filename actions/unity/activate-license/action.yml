@@ -1,0 +1,211 @@
+name: UNITY activate license
+description: >-
+  Activate a Unity license.
+
+  NOTE: this action has a post action to return the license.
+
+inputs:
+  unity-exe:
+    description: >-
+      Path to Unity executable.
+      This value is usually returned by the setup action.
+    required: true
+
+  unity-email:
+    description: >-
+      User email required to activate license.
+    required: true
+  unity-password:
+    description: >-
+      User password required to activate license.
+    required: true
+  unity-serial:
+    description: >-
+      User serial required to activate license.
+    required: false
+  unity-license-file:
+    description: >-
+      User license file (.ulf) required to activate license.
+    required: false
+  unity-license-server:
+    description: >-
+      User license server URL (http://SERVER-IP-ADDRESS:PORT).
+
+      Internally `services-config.json` will be generated as follows:
+
+      ```json
+      {
+        "licensingServiceBaseUrl": inputs.unity-license-server,
+        "enableEntitlementLicensing": true,
+        "hubEnableWorkOffline": false,
+        "clientConnectTimeoutSec": inputs.timeout,
+        "clientHandshakeTimeoutSec": inputs.timeout
+      }
+      ```
+      @see: https://docs.unity.com/licensing/en-us/manual/ClientConfig
+    required: false
+
+
+  timeout:
+    description: timeout in seconds between activation retries
+    required: false
+    default: '15'
+  retries:
+    description: number of retries before giving up on the activation
+    required: false
+    default: '15'
+
+runs:
+  using: composite
+  steps:
+  - id: activate-license
+    uses: kagekirin/gha-py-toolbox/actions/util/post@main
+    name: Activate License
+    env:
+      input_unity_exe: ${{inputs.unity-exe}}
+      input_unity_email: ${{inputs.unity-email}}
+      input_unity_password: ${{inputs.unity-password}}
+      input_unity_serial: ${{inputs.unity-serial}}
+      input_unity_license_file: ${{inputs.unity-license-file}}
+      input_unity_license_server: ${{inputs.unity-license-server}}
+      input_timeout: ${{inputs.timeout}}
+      input_retries: ${{inputs.retries}}
+    with:
+      shell: python
+      main: |
+        import os, sys, json, time, platform, subprocess
+        from pathlib import Path
+
+        os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+        unity_exe = Path(os.getenv("input_unity_exe"))
+        assert unity_exe is not None
+        assert unity_exe.is_file()
+
+        unity_email = str(os.getenv("input_unity_email"))
+        assert unity_email is not None
+
+        unity_password = str(os.getenv("input_unity_password"))
+        assert unity_password is not None
+
+        unity_serial = str(os.getenv("input_unity_serial"))
+        unity_license_file = str(os.getenv("input_unity_license_file"))
+        unity_license_server = str(os.getenv("input_unity_license_server"))
+
+        timeout = int(os.getenv("input_timeout"))
+        retries = int(os.getenv("input_retries"))
+
+        print(f"registering Unity license for {unity_email}")
+
+        command = []
+        if unity_license_server:
+          path_switch = {
+              "Windows": lambda: Path(os.getenv("PROGRAMDATA")).joinpath("Unity", "config"),
+              "Darwin": lambda: Path("/").joinpath("Library", "Application Support", "Unity", "config"),
+              "Linux": lambda: Path("/").joinpath("usr", "share", "unity3d", "config"),
+          }
+          config_path = path_switch.get(platform.system(), "Linux")()
+          config_path.mkdir(parents=True, exist_ok=True)
+
+          services_config = {
+            "licensingServiceBaseUrl": unity_license_server,
+            "enableEntitlementLicensing": True,
+            "hubEnableWorkOffline": False,
+            "clientConnectTimeoutSec": timeout,
+            "clientHandshakeTimeoutSec": timeout,
+          }
+          json.dump(services_config, config_path.joinpath("services-config.json"), indent=2)
+
+          unity_licensing_client = unity_exe.parent.joinpath("Data", "Resources", "Licensing", "Client", "Unity.Licensing.Client")
+          assert unity_licensing_client is not None
+          assert unity_licensing_client.is_file()
+
+          err = os.waitstatus_to_exitcode(os.system(f"{unity_licensing_client} --acquire-floating > license.txt"))
+          exit(err)
+
+        elif unity_serial:
+          print(f"registering using serial {unity_serial}")
+          command = [
+            str(unity_exe.absolute()),
+            "-quit",
+            "-nographics",
+            "-batchmode",
+            "-logFile", "-",
+            "-serial",  unity_serial,
+            "-username",  unity_email,
+            "-password",  unity_password,
+          ]
+
+        elif unity_license_file:
+          print(f"registering using license file {unity_license_file}")
+          Path("license.ulf").write_text(unity_license_file)
+          command = [
+            str(unity_exe.absolute()),
+            "-quit",
+            "-nographics",
+            "-batchmode",
+            "-logFile", "-",
+            "-manualLicenseFile",  "license.ulf",
+            "-username",  unity_email,
+            "-password",  unity_password,
+          ]
+
+        cmd = " ".join(command)
+        print(cmd, flush=True)
+        for retry in range(1, retries + 1):
+          print(f"activation attempt #{retry}")
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          if err == 0:
+            break
+          print(f"failed activation attempt #{retry}")
+          time.sleep(timeout * retry)
+
+        exit(err)
+
+      post: |
+        import os, sys, time, subprocess
+        from pathlib import Path
+
+        os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+        unity_exe = Path(os.getenv("input_unity_exe"))
+        assert unity_exe is not None
+        assert unity_exe.is_file()
+
+        unity_email = str(os.getenv("input_unity_email"))
+        assert unity_email is not None
+
+        unity_password = str(os.getenv("input_unity_password"))
+        assert unity_password is not None
+
+        unity_license_server = str(os.getenv("input_unity_license_server"))
+
+        timeout = int(os.getenv("input_timeout"))
+        retries = int(os.getenv("input_retries"))
+
+        if unity_license_server:
+          exit(0) # nothing to do
+
+        print(f"returning Unity license for {unity_email}")
+        command = [
+            str(unity_exe.absolute()),
+            "-quit",
+            "-nographics",
+            "-batchmode",
+            "-logFile", "-",
+            "-returnlicense",
+            "-username",  unity_email,
+            "-password",  unity_password,
+          ]
+
+        cmd = " ".join(command)
+        print(cmd, flush=True)
+        for retry in range(1, retries + 1):
+          print(f"license return attempt #{retry}")
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          if err == 0:
+            break
+          print(f"failed license return attempt #{retry}")
+          time.sleep(timeout * retry)
+
+        exit(err)
