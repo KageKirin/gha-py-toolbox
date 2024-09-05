@@ -1,0 +1,79 @@
+name: UNITY build
+description: >-
+  Builds a project using Unity Editor.
+
+  NOTE: requires license activation to be handled beforehand.
+
+  **WARNING: only Linux ~~supported~~ tested for now**
+
+inputs:
+  unity-exe:
+    description: >-
+      Path to Unity executable.
+      This value is usually returned by the setup action.
+    required: true
+
+  project-path:
+    description: >-
+      Path to Unity project.
+      Defaults to workspace.
+    required: true
+    default: ${{github.workspace}}
+
+  output-path:
+    description: >-
+      Path to project output.
+      Defaults to workspace/build
+    required: true
+    default: ${{github.workspace}}/build
+
+  arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+    required: true
+
+
+
+#outputs: TBD
+
+
+runs:
+  using: composite
+  steps:
+  - id: build
+    name: Build project ${{inputs.project-path}}
+    shell: python
+    env:
+      input_unity_exe: ${{inputs.unity-exe}}
+      input_project_path: ${{inputs.project-path}}
+      input_output_path: ${{inputs.output-path}}
+      input_arguments: ${{inputs.arguments}}
+    run: |
+      import os, sys, subprocess
+      from pathlib import Path
+
+      unity_exe = Path(os.getenv("input_unity_exe"))
+      assert unity_exe
+      assert unity_exe.is_file()
+
+      project_path = Path(os.getenv("input_project_path"))
+      assert project_path
+      assert project_path.is_dir()
+
+      arguments = str(os.getenv("input_arguments")).split()
+
+      command = [
+          unity_exe.absolute(),
+          "-quit",
+          "-nographics",
+          "-batchmode",
+          "-logFile",
+          "-",
+          "-projectPath",
+          project_path.absolute(),
+      ] + arguments
+      print(f"executing '{command}'")
+      subprocess.check_call(command)
