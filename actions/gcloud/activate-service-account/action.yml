@@ -1,0 +1,86 @@
+name: GCLOUD auth activate service account
+description: >-
+  Activates authentication for service account
+  Returns the access token
+
+
+inputs:
+  credentials:
+    description: >
+      The keyfile JSON data.
+      WARNING: expecting a JSON string, not a filename.
+
+      To obtain the key file for this command, use either the Google Cloud Console
+      or `gcloud iam service-accounts keys create`.
+      The key file can be .json (preferred) or .p12 (legacy) format. In the case of
+      legacy .p12 files, a separate password might be required and is displayed in
+      the Console when you create the key.
+
+      Usually you should pass secrets.GOOGLE_CREDENTIALS_JSON containing the JSON
+      string.
+    required: true
+
+
+outputs:
+  token:
+    description: >
+      The access token for the account specified by the inputs.credentials.
+    value: ${{steps.print-access-token.outputs.token}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: dump-key-file
+    name: Dump credentials into keyfile
+    shell: python
+    env:
+      inputs_credentials: ${{inputs.credentials}}
+    run: |
+      ## actions/gcloud/activate-service-account/action.yml#dump-key-file
+      import os, json
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      credentials = str(os.getenv("inputs_credentials"))
+      credentials_json = json.loads(credentials)
+
+      credentials_file = Path(".google_credentials.json")
+      credentials_file.write_text(json.dumps(credentials_json))
+      assert credentials_file.exists()
+
+  - id: activate-service-account
+    name: Activate service account
+    shell: python
+    run: |
+      ## actions/gcloud/activate-service-account/action.yml#activate-service-account
+      import os, subprocess
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      subprocess.check_call(
+          [
+              "gcloud",
+              "auth",
+              "activate-service-account",
+              "--key-file=.google_credentials.json",
+          ]
+      )
+
+  - id: print-access-token
+    name: Print access token
+    shell: python
+    run: |
+      ## actions/gcloud/activate-service-account/action.yml#print-access-token
+      import os, subprocess
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = subprocess.check_output(
+          ["gcloud", "auth", "print-access-token"]
+      ).decode()
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"token={token}")
+          print(f"token={token}", file=fh)
