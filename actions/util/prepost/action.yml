@@ -1,0 +1,24 @@
+name: UTIL Action with pre and post steps
+description: >-
+  Action going through JS Action to execute a main command and set a command as a
+  post step.
+
+inputs:
+  shell:
+    description: shell to run commands in
+    required: true
+  pre:
+    description: Pre command/script.
+    required: true
+  main:
+    description: Main command/script.
+    required: true
+  post:
+    description: Post command/script.
+    required: true
+
+runs:
+  using: node20
+  pre: pre.js
+  main: main.js
+  post: post.js
