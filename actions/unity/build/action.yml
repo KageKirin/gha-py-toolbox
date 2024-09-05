@@ -1,0 +1,284 @@
+name: UNITY build
+description: >-
+  Builds a project using Unity Editor.
+
+  NOTE: requires license activation to be handled beforehand.
+
+  **WARNING: only Linux ~~supported~~ tested for now**
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{ github.workspace }}
+
+  unity-exe:
+    description: >-
+      Path to Unity executable.
+      This value is usually returned by the setup action.
+    required: true
+
+  project-path:
+    description: >-
+      Path to Unity project.
+      Defaults to same folder.
+    required: true
+    default: .
+
+  output-path:
+    description: >-
+      Path to project output binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Linux, so no extension is actually fine.
+    required: true
+    default: ${{github.workspace}}/build/${{github.repository}}
+
+  arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildLinux64Player {buildpath}
+
+  cache-artifacts:
+    description: >-
+      Whether to cache the build artifacts.
+      Caching allows follow up jobs to re-use the build artifacts from the job calling this macro.
+
+      This is especially useful for functionality and unit testing since rebuilding the application
+      might take some time.
+    required: false
+    default: false
+  cache-name:
+    description: >-
+      Name to give to cache
+    required: false
+    default: ${{runner.os}}-${{github.repository_id}}-${{github.head_ref}}-${{github.sha}}-${{github.run_id}}
+
+outputs:
+  build-path:
+    description: path to build artifact (directory)
+    value: ${{ steps.check-build-results.outputs.build_dir }}
+  build-exe:
+    description: path to build artifact (executable)
+    value: ${{ steps.check-build-results.outputs.build_exe }}
+
+
+
+runs:
+  using: composite
+  steps:
+  - id: verify-inputs
+    name: Verify inputs
+    shell: cat {0}
+    run: |
+      ## actions/unity/build/action.yml#verify-inputs
+      inputs.unity-exe: ${{ inputs.unity-exe }}
+      inputs.path: ${{ inputs.path }}
+      inputs.project-path: ${{ inputs.project-path }}
+      inputs.output-path: ${{ inputs.output-path }}
+      inputs.arguments: ${{ inputs.arguments }}
+
+  - id: check-inputs
+    name: Check inputs _before_ building
+    shell: python
+    env:
+      inputs_unity_exe: ${{ inputs.unity-exe }}
+      inputs_output_path: ${{ inputs.output-path }}
+      inputs_path: ${{ inputs.path }}
+      inputs_project_path: ${{ inputs.project-path }}
+
+    run: |
+      ## actions/unity/build/action.yml#check-inputs
+      import os
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+
+      inputs_unity_exe = os.getenv("inputs_unity_exe")
+      assert inputs_unity_exe is not None
+      inputs_unity_exe = str(inputs_unity_exe)
+      unity_exe = Path(inputs_unity_exe)
+      print(
+          "unity_exe:",
+          unity_exe,
+          unity_exe.absolute(),
+          f"exists: {unity_exe.exists()}",
+      )
+      assert unity_exe.exists()
+      assert unity_exe.is_file()
+
+      inputs_path = os.getenv("inputs_path")
+      assert inputs_path is not None
+      inputs_path = str(inputs_path)
+      path = Path(inputs_path)
+      print("path:", path, path.absolute(), f"exists: {path.exists()}")
+
+      with chdir(path):
+          print("cwd:", Path(".").absolute(), flush=True)
+
+          inputs_project_path = os.getenv("inputs_project_path")
+          assert inputs_project_path is not None
+          inputs_project_path = str(inputs_project_path)
+          project_path = Path(inputs_project_path)
+          print(
+              "project_path",
+              project_path,
+              project_path.absolute(),
+              f"exists: {project_path.exists()}",
+          )
+          assert project_path.exists()
+          assert project_path.is_dir()
+
+          inputs_output_path = os.getenv("inputs_output_path")
+          assert inputs_output_path is not None
+          inputs_output_path = str(inputs_output_path)
+          output_path = Path(inputs_output_path)
+          if not output_path.parent.exists():
+              output_path.parent.mkdir(parents=True, exist_ok=True)
+          print("output_path", output_path, output_path.absolute())
+          print(
+              "output_path:",
+              output_path,
+              output_path.exists(),
+              output_path.parent.exists(),
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"output_dir={output_path.parent.absolute()}")
+              print(f"output_dir={output_path.parent.absolute()}", file=fh)
+
+
+  - id: build
+    name: Build project ${{inputs.project-path}}
+    shell: python
+    env:
+      input_path: ${{inputs.path}}
+      input_unity_exe: ${{inputs.unity-exe}}
+      input_project_path: ${{inputs.project-path}}
+      input_output_path: ${{inputs.output-path}}
+      input_arguments: ${{inputs.arguments}}
+    run: |
+      ## actions/unity/build/action.yml#build
+      import os, sys, subprocess
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+
+      input_unity_exe = os.getenv("input_unity_exe")
+      assert input_unity_exe is not None
+      unity_exe = Path(input_unity_exe)
+      assert unity_exe.exists()
+      assert unity_exe.is_file()
+
+      input_path = os.getenv("input_path")
+      assert input_path is not None
+      path = Path(input_path)
+      assert path.exists()
+      assert path.is_dir()
+
+      with chdir(path):
+          print("cwd:", Path(".").absolute(), flush=True)
+
+          input_project_path = os.getenv("input_project_path")
+          assert input_project_path is not None
+          project_path = Path(input_project_path)
+          assert project_path.exists()
+          assert project_path.is_dir()
+          print("project_path:", project_path, project_path.absolute(), flush=True)
+
+          input_output_path = os.getenv("input_output_path")
+          assert input_output_path is not None
+          output_path = Path(input_output_path)
+          assert output_path.parent.exists()
+          assert output_path.parent.is_dir()
+          print("output_path:", output_path, output_path.absolute(), flush=True)
+
+          inputs_arguments = os.getenv("input_arguments")
+          assert inputs_arguments is not None
+          inputs_arguments = str(inputs_arguments)
+          arguments = inputs_arguments.format(
+              buildpath=str(output_path.absolute())
+          ).split()
+          print("arguments:", arguments)
+
+          command = [
+              str(unity_exe.absolute()),
+              "-quit",
+              "-nographics",
+              "-batchmode",
+              "-logFile",
+              "-",
+              "-projectPath",
+              str(project_path.absolute()),
+          ] + arguments
+          cmd = " ".join(command)
+          print(f"executing '{cmd}'", flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          print(err)
+          exit(err)
+
+
+  - id: locate-build-artifacts
+    uses: kagekirin/gha-py-toolbox/actions/util/locate-files@main
+    with:
+      path: ${{steps.check-inputs.outputs.output_dir}}
+      patterns: '*.*'
+      depth: -1
+
+  - id: check-build-results
+    name: Check build check-build-results
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_output_path: ${{inputs.output-path}}
+      inputs_build_artifacts: ${{steps.locate-build-artifacts.outputs.files}}
+    run: |
+      ## actions/unity/build/action.yml#check-build-results
+      import os, sys, re, json
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+
+      inputs_path = os.getenv("inputs_path")
+      inputs_path = str(inputs_path)
+      with chdir(inputs_path):
+          print("cwd:", Path(".").absolute(), flush=True)
+
+          inputs_output_path = os.getenv("inputs_output_path")
+          assert inputs_output_path is not None
+          inputs_output_path = str(inputs_output_path)
+          print("inputs_output_path:", inputs_output_path, flush=True)
+
+          inputs_build_artifacts = os.getenv("inputs_build_artifacts", "")
+          assert inputs_build_artifacts is not None
+          inputs_build_artifacts = str(inputs_build_artifacts)
+
+          output_path = Path(inputs_output_path).absolute()
+          print("output_path:", output_path, flush=True)
+          assert output_path is not None
+          assert output_path.exists()
+
+          build_artifacts = inputs_build_artifacts.split()
+          assert build_artifacts is not None
+          for f in build_artifacts:
+              p = Path(f)
+              assert p.exists()
+
+  - id: cache-artifacts
+    if: ${{ fromJSON(inputs.cache-artifacts) }}
+    name: Cache artifacts
+    uses: actions/cache/save@v4
+    with:
+      path: ${{steps.check-inputs.outputs.output_dir}}
+      key: ${{ inputs.cache-name }}
