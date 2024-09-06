@@ -1,0 +1,113 @@
+name: NPM pack
+description: >
+  Packs a folder into a NPM package.
+
+inputs:
+  path:
+    description: >
+      Path from where to run the commands.
+      Expects <path>/package.json to exist.
+
+      Defaults to current directory
+    required: false
+    default: '.'
+
+  registry:
+    description: >
+      Registry URL to set in package.json.
+      Overrides the registry already set in package.json.
+
+      Note: official NPM registry: https://registry.npmjs.org
+      Note: GitHub NPM registry: https://npm.pkg.github.com/@{owner}
+    required: false
+
+  package:
+    description: >
+      Package name.
+      Overrides the package name already set in package.json.
+
+      May include the scope if the scope is part of the package name (the way it's
+      handled for regular NPM packages).
+      Note: might also require to write the package name (e.g.) `@scope/package-name`
+      as
+      either `%40scope%2Fpackage-name` or `@scope%2Fpackage-name` depending on the
+      registry server.
+
+      GitHub (Enterprise): add scope to registry URL and not to package name.
+      Unity/UPM: `package-name` includes the tld-scope, i.e. `tld.owner.packagename`
+    required: false
+
+  version:
+    description: >
+      Package version.
+      Overrides the package version already set in package.json.
+    required: false
+    default: ''
+
+
+outputs:
+  packages:
+    description: >
+      Path of the created package(s).
+    value: ${{ steps.create-package.outputs.packages }}
+
+
+runs:
+  using: composite
+  steps:
+  - id: create-package
+    name: Create package
+    shell: python
+    env:
+      package_path: ${{ inputs.path }}
+      package_registry: ${{ inputs.registry }}
+      package_name: ${{ inputs.package }}
+      package_version: ${{ inputs.version }}
+    run: |
+      import os, sys, json, pprint
+      from pathlib import Path
+      from urllib.parse import urlparse
+
+      package_path = Path(os.getenv("package_path"))
+      assert package_path
+      assert package_path.is_dir()
+
+      package_json = package_path.joinpath("package.json")
+      assert package_json
+      assert package_json.is_file()
+
+      package_registry = str(os.getenv("package_registry"))
+      package_name = str(os.getenv("package_name"))
+      package_version = str(os.getenv("package_version"))
+
+      package_json_data = json.loads(package_json)
+      assert package_json_data
+      pprint.pp(package_json_data)
+
+      # edit package.json
+      if package_registry or package_name or package_version:
+
+        if package_name:
+          package_json_data["name"] = package_name
+
+        if package_version:
+          package_json_data["version"] = package_version
+
+        if package_registry:
+          if not package_json_data["publishConfig"]:
+            package_json_data["publishConfig"] = {}
+          package_json_data["publishConfig"]["registry"] = urlparse(package_registry).geturl()
+          json.dumps(package_json_data, package_json)
+
+      basedir = os.getcwd()
+      os.chdir(package_path.absolute())
+      cmd = f"npm pack"
+      print(cmd)
+      err = os.waitstatus_to_exitcode(os.system(cmd))
+      os.chdir(basedir)
+      exit(err)
+
+
+      #with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+      #    print(f"packages={tarball_path}")
+      #    print(f"packages={tarball_path}", file=fh)
