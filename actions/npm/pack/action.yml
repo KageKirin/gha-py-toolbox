@@ -1,0 +1,179 @@
+name: NPM pack
+description: >
+  Packs a folder into a NPM package.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  package-json:
+    description: relative path to package.json
+    required: false
+    default: package.json
+
+  registry:
+    description: >
+      Registry URL to set in package.json.
+      Overrides the registry already set in package.json.
+
+      Note: official NPM registry: https://registry.npmjs.org
+      Note: GitHub NPM registry: https://npm.pkg.github.com/@{owner}
+    required: false
+
+  package:
+    description: >
+      Package name.
+      Overrides the package name already set in package.json.
+
+      May include the scope if the scope is part of the package name (the way it's
+      handled for regular NPM packages).
+      Note: might also require to write the package name (e.g.) `@scope/package-name`
+      as
+      either `%40scope%2Fpackage-name` or `@scope%2Fpackage-name` depending on the
+      registry server.
+
+      GitHub (Enterprise): add scope to registry URL and not to package name.
+      Unity/UPM: `package-name` includes the tld-scope, i.e. `tld.owner.packagename`
+    required: false
+
+  version:
+    description: >
+      Package version.
+      Overrides the package version already set in package.json.
+    required: false
+    default: ''
+
+
+outputs:
+  packagefile:
+    description: >
+      Path of the created package file.
+    value: ${{steps.create-package.outputs.packagefile}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: check-input-files
+    name: Check input files
+    shell: python
+    env:
+      package_path: ${{inputs.path}}
+      package_json: ${{inputs.package-json}}
+    run: |
+      ## actions/npm/pack/action.yml#check-input-files
+      import os, sys, json, pprint
+      from pathlib import Path
+      from contextlib import chdir
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      package_path = Path(os.getenv("package_path", "."))
+      assert package_path is not None
+      assert package_path.is_dir()
+
+      with chdir(package_path):
+          print("cwd:", Path(".").absolute())
+
+          package_json = Path(os.getenv("package_json"))
+          assert package_json is not None
+          assert package_json.is_file()
+
+          for dirpath, dirnames, filenames in os.walk(package_json.parent):
+              _dir = Path(dirpath).joinpath("placeholder")
+              depth = str(_dir).count(os.sep)
+              print(f"{dirpath}:")
+              for f in filenames:
+                  print(f"├ {f}".ljust(2))
+
+
+  - id: create-package
+    name: Create package
+    shell: python
+    env:
+      package_path: ${{inputs.path}}
+      package_json: ${{inputs.package-json}}
+      package_registry: ${{inputs.registry}}
+      package_name: ${{inputs.package}}
+      package_version: ${{inputs.version}}
+    run: |
+      ## actions/npm/pack/action.yml#create-package
+      import os, sys, json, pprint
+      from pathlib import Path
+      from contextlib import chdir
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      package_path = Path(os.getenv("package_path", "."))
+      assert package_path is not None
+      assert package_path.is_dir()
+
+      with chdir(package_path):
+          print("cwd:", Path(".").absolute())
+
+          package_json = Path(os.getenv("package_json"))
+          assert package_json is not None
+          assert package_json.is_file()
+
+          package_registry = str(os.getenv("package_registry"))
+          package_name = str(os.getenv("package_name"))
+          package_version = str(os.getenv("package_version"))
+
+          package_json_data = json.loads(package_json.read_text())
+          assert package_json_data is not None
+          pprint.pp(package_json_data)
+
+          # edit package.json
+          if package_registry or package_name or package_version:
+
+              if package_name:
+                  package_json_data["name"] = package_name
+
+              if package_version:
+                  package_json_data["version"] = package_version
+
+              if package_registry:
+                  if not package_json_data["publishConfig"]:
+                      package_json_data["publishConfig"] = {}
+                  package_json_data["publishConfig"]["registry"] = urlparse(
+                      package_registry
+                  ).geturl()
+                  package_json.write_text(json.dumps(package_json_data))
+
+          with chdir(package_json.parent):
+              cmd = f"npm pack"
+              print(cmd, flush=True)
+              err = os.waitstatus_to_exitcode(os.system(cmd))
+
+              # retrieve package
+              if err == 0:
+                  package_file = Path(
+                      f"{package_json_data['name']}-{package_json_data['version']}.tgz"
+                  )
+                  print("locating package_file:", package_file)
+                  assert package_file is not None
+                  assert package_file.exists()
+                  assert package_file.is_file()
+
+                  with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+                      print(f"packagefile={package_file.absolute()}")
+                      print(f"packagefile={package_file.absolute()}", file=fh)
+
+              exit(err)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |-
+      ## actions/npm/pack/action.yml#verify-outputs
+      steps.create-package.outputs.packagefile
+      ${{steps.create-package.outputs.packagefile}}
+
+  - id: verify-package
+    name: Verify Package
+    shell: bash
+    run: |-
+      tar tvf ${{steps.create-package.outputs.packagefile}}
