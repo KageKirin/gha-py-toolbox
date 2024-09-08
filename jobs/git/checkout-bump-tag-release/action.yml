@@ -1,0 +1,248 @@
+name: 'GIT SEMVER MACRO: checkout, bump version tag and create release'
+description: >-
+  Job action performing the following:
+  * checkout repo with tags
+  * get latest version tag
+  * bump tag
+  * create a new release for the bumped tag
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  name:
+    description: >
+      Git user name passed to `git config --local user.name`
+      Defaults to GitHub (Enterprise) actor.
+    required: false
+    default: CI Bot on behalf of ${{github.actor}}
+  email:
+    description: >
+      Git user name passed to `git config --local user.email`
+      Defaults to GitHub (Enterprise) actor as noreply address.
+    required: false
+    default: ${{github.actor_id}}+${{github.actor}}@users.noreply.github.com
+
+  tag-message:
+    description: >
+      Git tag message.
+      Empty string (default) will create lightweight tag.
+    required: false
+    default: ''
+
+  dry-run:
+    description: perform dry-run (don't push anything back)
+    required: false
+    default: 'false'
+
+  ## inputs from actions/checkout@v4
+  repository:
+    description: Repository name with owner. For example, actions/checkout
+    default: ${{github.repository}}
+  ref:
+    description: >
+      The branch, tag or SHA to checkout. When checking out the repository that
+      triggered a workflow, this defaults to the reference or SHA for that
+      event.  Otherwise, uses the default branch.
+  token:
+    description: >
+      Personal access token (PAT) used to fetch the repository. The PAT is configured
+      with the local git config, which enables your scripts to run authenticated git
+      commands. The post-job step removes the PAT.
+
+
+      We recommend using a service account with the least permissions necessary.
+      Also when generating a new PAT, select the least scopes necessary.
+
+
+      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+    default: ${{github.token}}
+  ssh-key:
+    description: >
+      SSH key used to fetch the repository. The SSH key is configured with the local
+      git config, which enables your scripts to run authenticated git commands.
+      The post-job step removes the SSH key.
+
+
+      We recommend using a service account with the least permissions necessary.
+
+
+      [Learn more about creating and using
+      encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+  ssh-known-hosts:
+    description: >
+      Known hosts in addition to the user and global host key database. The public
+      SSH keys for a host may be obtained using the utility `ssh-keyscan`. For example,
+      `ssh-keyscan github.com`. The public key for github.com is always implicitly
+      added.
+  ssh-strict:
+    description: >
+      Whether to perform strict host key checking. When true, adds the options `StrictHostKeyChecking=yes`
+      and `CheckHostIP=no` to the SSH command line. Use the input `ssh-known-hosts`
+      to
+      configure additional hosts.
+    default: true
+  ssh-user:
+    description: >
+      The user to use when connecting to the remote SSH host. By default 'git' is
+      used.
+    default: git
+  persist-credentials:
+    description: Whether to configure the token or SSH key with the local git config
+    default: true
+  clean:
+    description: Whether to execute `git clean -ffdx && git reset --hard HEAD` before fetching
+    default: true
+  filter:
+    description: >
+      Partially clone against a given filter.
+      Overrides sparse-checkout if set.
+    default:
+  sparse-checkout:
+    description: >
+      Do a sparse checkout on given patterns.
+      Each pattern should be separated with new lines.
+    default:
+  sparse-checkout-cone-mode:
+    description: >
+      Specifies whether to use cone-mode when doing a sparse checkout.
+    default: true
+  fetch-depth:
+    description: Number of commits to fetch. 0 indicates all history for all branches and tags.
+    default: 1
+  show-progress:
+    description: Whether to show progress status output when fetching.
+    default: true
+  lfs:
+    description: Whether to download Git-LFS files
+    default: false
+  submodules:
+    description: >
+      Whether to checkout submodules: `true` to checkout submodules or `recursive`
+      to
+      recursively checkout submodules.
+
+
+      When the `ssh-key` input is not provided, SSH URLs beginning with `git@github.com:`
+      are
+      converted to HTTPS.
+    default: false
+  set-safe-directory:
+    description: Add repository path as safe.directory for Git global config by running `git config --global --add safe.directory <path>`
+    default: true
+  github-server-url:
+    description: The base URL for the GitHub instance that you are trying to clone from, will use environment defaults to fetch from the same instance that the workflow is running from unless specified. Example URLs are https://github.com or https://my-ghes-server.example.com
+    required: true
+    default: ${{github.server_url}}
+
+  bump_major:
+    description: >-
+      whether to bump version major
+      e.g '1.2.3' -> '2.0.0'
+    required: false
+    default: 'false'
+  bump_minor:
+    description: >-
+      whether to bump version minor
+      e.g. '1.2.3' -> '1.3.0'
+    required: false
+    default: 'false'
+  bump_patch:
+    description: >-
+      whether to bump version patch
+      e.g. '1.2.3' -> '1.2.4'
+    required: false
+    default: 'false'
+  bump_prerelease:
+    description: >-
+      whether to bump version prerelease
+      e.g. '1.2.3-rc.0' -> '1.2.3-rc.1'
+    required: false
+    default: 'false'
+  set_prerelease:
+    description: >-
+      new prerelease component to set
+      e.g. '1.2.3' -> '1.2.3-rc.0'
+    required: false
+    default: ''
+  set_build:
+    description: >-
+      new build component to set
+      e.g. '1.2.3' -> '1.2.3+foobar'
+    required: false
+    default: ''
+  finalize:
+    description: >-
+      any prerelease and build metadata from the version
+      e.g. '1.2.3-rc.0+foobar' -> '1.2.3'
+    required: false
+    default: 'false'
+  numerical_limit:
+    description: >
+      Numerical limit (maximum) for a version component.
+      e.g. .NET version components can only reach a maximum of signed-16-bit-word,
+      i.e. 32767.
+      This action will automatically bump the next upper component and reset the current
+      component to 0
+      if it exceeds the numerical_limit.
+      Caveat: note that exceeding the numerical limit with the major component will
+      fail.
+    required: false
+    default: '32767'
+
+outputs:
+  version:
+    description: bumped version
+    value: ${{steps.bump-version.outputs.version}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: bump-version
+    uses: kagekirin/gha-py-toolbox/jobs/git/checkout-bump-tag@main
+    with:
+      path: ${{inputs.path}}
+      package-json: ${{inputs.package-json}}
+      name: ${{inputs.name}}
+      email: ${{inputs.email}}
+      message: ${{inputs.tag-message}}
+      dry-run: ${{inputs.dry-run}}
+      repository: ${{inputs.repository}}
+      ref: ${{inputs.ref}}
+      token: ${{inputs.token}}
+      ssh-key: ${{inputs.ssh-key}}
+      ssh-known-hosts: ${{inputs.ssh-known-hosts}}
+      ssh-strict: ${{inputs.ssh-strict}}
+      ssh-user: ${{inputs.ssh-user}}
+      persist-credentials: ${{inputs.persist-credentials}}
+      clean: ${{inputs.clean}}
+      filter: ${{inputs.filter}}
+      sparse-checkout: ${{inputs.sparse-checkout}}
+      sparse-checkout-cone-mode: ${{inputs.sparse-checkout-cone-mode}}
+      fetch-depth: ${{inputs.fetch-depth}}
+      show-progress: ${{inputs.show-progress}}
+      lfs: ${{inputs.lfs}}
+      submodules: ${{inputs.submodules}}
+      set-safe-directory: ${{inputs.set-safe-directory}}
+      github-server-url: ${{inputs.github-server-url}}
+      bump_major: ${{inputs.bump_major}}
+      bump_minor: ${{inputs.bump_minor}}
+      bump_patch: ${{inputs.bump_patch}}
+      bump_prerelease: ${{inputs.bump_prerelease}}
+      set_prerelease: ${{inputs.set_prerelease}}
+      set_build: ${{inputs.set_build}}
+      finalize: ${{inputs.finalize}}
+      numerical_limit: ${{inputs.numerical_limit}}
+
+  - id: create-release
+    uses: kagekirin/gha-py-toolbox/actions/gh/create-release@main
+    with:
+      token: ${{inputs.token}}
+      title: Release v${{steps.bump-version.outputs.version}}
+      tag: v${{steps.bump-version.outputs.version}}
+      commitish: ''
+      generate-notes: true
+      dry-run: ${{inputs.dry-run}}
