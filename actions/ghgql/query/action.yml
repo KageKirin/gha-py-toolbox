@@ -1,0 +1,107 @@
+name: GH GRAPHQL generic query
+description: >
+  Generic GraphQL query action.
+  Allows to pass a fully formed GraphQL query (and mutation).
+  NOTE: The action might still succeed despite the query having failed.
+        In this case, the outputs.json field will hold the error structure.
+
+inputs:
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  graphql-query:
+    description: >
+      GraphQL query/mutation.
+      Can contain variables.
+    required: true
+    default: |
+      query {
+        viewer {
+          login
+        }
+      }
+  graphql-variables:
+    description: >
+      GraphQL query variables.
+      Will be appended to query.
+    required: true
+    default: ''
+
+
+outputs:
+  json:
+    description: >
+      JSON representation of the query result.
+    value: ${{ fromJSON(steps.generic-query.outputs.pullrequests) }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: generic-query
+    name: Build
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_graphql_url: ${{inputs.graphql-url}}
+      inputs_token: ${{inputs.token}}
+      inputs_graphql_query: ${{inputs.graphql-query}}
+      inputs_graphql_variables: ${{inputs.graphql-variables}}
+    run: |
+      import os, sys, re, json, requests, pprint
+      from urllib.parse import urlparse
+
+      token = str(os.getenv("inputs_token"))
+      if not token:
+          token = str(os.getenv("GITHUB_TOKEN"))
+
+      session = requests.Session()
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+      graphql_url = str(os.getenv("inputs_graphql_url"))
+      assert graphql_url
+      assert urlparse(graphql_url)
+
+      graphql_query = str(os.getenv("inputs_graphql_query"))
+      assert graphql_query
+      graphql_variables = str(os.getenv("inputs_graphql_variables"))
+
+
+      query = f"{graphql_query}\n\n{graphql_variables}"
+      print(query)
+
+      response = session.post(url=graphql_url, json={"query": query})
+      print("response status code: ", response.status_code)
+      if response.status_code == 200:
+          print("response : ", response.content)
+
+          response_data = response.json()
+          pprint.pp(response_data)
+
+          response_json = json.dumps(response_data)
+          response_json_escaped = json.dumps(response_json)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"json={' '.join(response_json_escaped)}")
+              print(f"json={' '.join(response_json_escaped)}", file=fh)
+          exit(0)
+
+      exit(response.status_code)
