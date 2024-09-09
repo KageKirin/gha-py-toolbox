@@ -1,0 +1,35 @@
+name: INSTALL Python Runtime
+description: >-
+  Installs a Python3 Runtime
+  and creates the alias `python` for it.
+
+  CAVEAT: only Linux/apt-get supported.
+
+inputs:
+  sudo:
+    description: >
+      'sudo' or 'su -u user' when required.
+      Default is empty.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: apt-get-install
+    name: Install Python3 via apt-get
+    shell: bash
+    env:
+      SUDO: ${{inputs.sudo}}
+    run: |
+      ${SUDO} apt-get install python3
+      which python3
+  - id: install-alias
+    name: Install python as symlink to python3
+    shell: bash
+    env:
+      SUDO: ${{inputs.sudo}}
+    run: |
+      pp=`which python3`
+      ${SUDO} ln -s $pp $(dirname $pp)/python
+      which python
