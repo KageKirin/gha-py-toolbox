@@ -1,0 +1,173 @@
+name: GH GraphQL update pull requests
+description: >
+  Updates provided pull requests up to provided count.
+  NOTE: update using rebase by default to avoid branch merges into feature branches.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  pullrequests:
+    description: >
+      JSON array (e.g. output of ghgql/get-pullrequests) containing at least:
+      - pullrequest id
+      - pullrequest headRefOid
+      for each element
+    required: true
+
+  pullrequest-branch-update-method:
+    description: >
+      The possible methods for updating a pull request's head branch with the base
+      branch.
+      MERGE: Update branch via merge. (Creates a merge commit, not recommended).
+      REBASE: Update branch via rebase. (Updates branch to top of base, recommended).
+    type: choice
+    options:
+    - MERGE
+    - REBASE
+    required: true
+    default: REBASE
+
+  count:
+    description: >
+      Maximum amount of pull requests to update.
+      Allows to stay within reasonable rate limits when there are many queued up PRs.
+    required: false
+    default: 42
+
+  dry-run:
+    description: if true, do not perform actual update
+    required: false
+    default: 'true'
+
+outputs:
+  updated-pullrequests:
+    description: >
+      JSON representation of the updated pull requests
+    value: ${{fromJSON(steps.update-pullrequests.outputs.pullrequests)}}
+  count:
+    description: >
+      Number of updated pull requests
+    value: ${{fromJSON(steps.update-pullrequests.outputs.count)}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: update-pullrequests
+    if: ${{ !fromJSON(inputs.dry-run) }}
+    name: Update pull requests
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_graphql_url: ${{inputs.graphql-url}}
+      inputs_token: ${{inputs.token}}
+      inputs_count: ${{inputs.count}}
+      inputs_pullrequests: ${{toJSON(inputs.pullrequests)}}
+      inputs_update_method: ${{inputs.pullrequest-branch-update-method}}
+      inputs_mutation: |
+        mutation($mutationId: String!, $headRefOid: GitObjectID!, $pullRequestId: ID!, $updateMethod: PullRequestBranchUpdateMethod!)
+        {
+            updatePullRequestBranch(input: {
+              clientMutationId: $mutationId,
+              expectedHeadOid: $headRefOid,
+              pullRequestId: $pullRequestId,
+              updateMethod: $updateMethod,
+            })
+            {
+              clientMutationId,
+              pullRequest
+              {
+                id,
+                number,
+                title,
+                baseRefName,
+                baseRefOid,
+                headRefName,
+                headRefOid,
+                mergeable,
+              }
+            }
+          }
+    run: |
+      ## actions/ghgql/update-pullrequests/action.yml#update-pullrequests
+      import os, sys, shlex, re, json, pprint, itertools, requests, uuid
+      from urllib.parse import urlparse
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      session = requests.Session()
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+      api_url = str(os.getenv("inputs_api_url"))
+      graphql_url = str(os.getenv("inputs_graphql_url"))
+      assert graphql_url is not None
+      assert urlparse(graphql_url) is not None
+
+      repository = str(os.getenv("inputs_repository"))
+      count = int(os.getenv("inputs_count"))
+      pullrequests = json.loads(json.loads(str(os.getenv("inputs_pullrequests"))))
+      udpate_method = str(os.getenv("inputs_update_method"))
+      mutation = str(os.getenv("inputs_mutation"))
+      print("mutation:", mutation)
+
+      responses = []
+      for pr in itertools.islice(pullrequests, count):
+          mutation_id = str(uuid.uuid5(uuid.uuid4(), repository + pr["id"]))
+          mutation_id = mutation_id.replace("-", "")
+          mutation_variables = {
+              "mutationId": mutation_id,
+              "headRefOid": pr["headRefOid"],
+              "pullRequestId": pr["id"],
+              "updateMethod": udpate_method,
+          }
+          print("variables:", mutation_variables)
+
+          response = session.post(
+              url=graphql_url,
+              json={"query": mutation, "variables": mutation_variables},
+          )
+          print("response status code: ", response.status_code)
+          if response.ok:
+              print("response : ", response.content)
+              responses.append(response.json())
+
+      # {"data":{"updatePullRequestBranch":null},"errors":[{"type":"UNPROCESSABLE","path":["updatePullRequestBranch"],"locations":[{"line":3,"column":5}],"message":"rebase not prepared"}]}
+      # {"data":{"updatePullRequestBranch":{"clientMutationId":"e783db8ef3775c20b4850eafdc7ec0f6","pullRequest":{"id":"MDExOlB1bGxSZXF1ZXN0Mjc3MTYxMw==","number":1555,"title":"build: bump xunit et al. dependencies","baseRefName":"main","baseRefOid":"66f6b31905e8591618d38e501d30f83b721adf41","headRefName":"build/bump-xunit-dependencies","headRefOid":"1cf35e374022b0a53bb1dddc39481b19e4df87d9","mergeable":"UNKNOWN"}}}}
+      failure = any(
+          [r for r in responses if r["data"]["updatePullRequestBranch"] == None]
+      )
+
+      responses_json = json.dumps(responses)
+      responses_json_escaped = json.dumps(responses_json)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"pullrequests={responses_json_escaped}")
+          print(f"pullrequests={responses_json_escaped}", file=fh)
+          print(f"count={len(responses)}")
+          print(f"count={len(responses)}", file=fh)
+
+      exit(1 if failure else 0)
