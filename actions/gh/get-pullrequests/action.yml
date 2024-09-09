@@ -1,0 +1,297 @@
+name: GH get pull requests
+description: >
+  Retrieves all OPEN pull requests matching a provided filter.
+  NOTE: closed pull requests are not retrieved.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+  base-ref:
+    description: >
+      Base branch name used to retrieve pull requests that merge into the given base
+      branch.
+      Defaults to 'main', can be explicitly set to empty to retrieve all pull requests
+    required: false
+    default: main
+
+  filter-title:
+    description: >
+      Filter regular expressions applied on the pull requests title.
+      Whitespace-separated values.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-author:
+    description: >
+      Filter regular expressions applied on the pull requests author/submitter.
+      Whitespace-separated values.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-assignee:
+    description: >
+      Filter regular expressions applied on the pull requests assignee.
+      Whitespace-separated values.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-branch:
+    description: >
+      Filter regular expressions applied on the pull requests branch.
+      Whitespace-separated values.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-labels:
+    description: >
+      Filter regular expressions applied on the pull requests labels.
+      Whitespace-separated values.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+
+
+outputs:
+  ids:
+    description: >
+      The IDs identifying the pull requests as whitespace-separated list.
+    value: ${{steps.get-pullrequests.outputs.ids}}
+  numbers:
+    description: >
+      The PR numbers identifying the pull requests as whitespace-separated list.
+    value: ${{steps.get-pullrequests.outputs.numbers}}
+  branches:
+    description: >
+      The branches identifying the pull requests as whitespace-separated list.
+    value: ${{steps.get-pullrequests.outputs.branches}}
+  shas:
+    description: >
+      The respective Oids of each branch as whitespace-separated list.
+    value: ${{steps.get-pullrequests.outputs.shas}}
+  base-branches:
+    description: >
+      The respective base branches as whitespace-separated list (aka base refs).
+    value: ${{steps.get-pullrequests.outputs.base_branches}}
+  base-shas:
+    description: >
+      The respective base branch Oids as whitespace-separated list (aka base refs).
+    value: ${{steps.get-pullrequests.outputs.base_shas}}
+  pullrequests:
+    description: >
+      JSON representation of the pull requests
+    value: ${{fromJSON(steps.get-pullrequests.outputs.pullrequests)}}
+  count:
+    description: >
+      Number of retrieved pull requests
+    value: ${{steps.get-pullrequests.outputs.count}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+        git+https://github.com/KageKirin/gha-py-toolbox.git@main#subdirectory=pylib/tuniq
+
+  - id: get-pullrequests
+    name: Get pull requests
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+      inputs_base_ref: ${{inputs.base-ref}}
+      inputs_filter_title: ${{inputs.filter-title}}
+      inputs_filter_author: ${{inputs.filter-author}}
+      inputs_filter_assignee: ${{inputs.filter-assignee}}
+      inputs_filter_branch: ${{inputs.filter-branch}}
+      inputs_filter_labels: ${{inputs.filter-labels}}
+    run: |
+      ## actions/gh/get-pullrequests/action.yml#get-pullrequests
+      import os, sys, shlex, re, json, pprint, itertools
+      import tuniq
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+      base_ref = str(os.getenv("inputs_base_ref"))
+
+
+      filter_titles = tuniq.unique(str(os.getenv("inputs_filter_title", "")).split())
+      filter_authors = tuniq.unique(
+          str(os.getenv("inputs_filter_author", "")).split()
+      )
+      filter_assignees = tuniq.unique(
+          str(os.getenv("inputs_filter_assignee", "")).split()
+      )
+      filter_branches = tuniq.unique(
+          str(os.getenv("inputs_filter_branch", "")).split()
+      )
+      filter_labels = tuniq.unique(str(os.getenv("inputs_filter_labels", "")).split())
+
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      pulls = repo.get_pulls(
+          state="open",
+          sort="created",
+          base=base_ref if base_ref and len(base_ref) > 0 else NotSet,
+          head=NotSet,
+      )
+
+      pprint.pp([(pr.id, pr.number, pr.title) for pr in pulls])
+
+      filtered_pulls = [pr for pr in pulls]
+      if filter_titles and len(filter_titles):
+          subfiltered_pulls = []
+          for filter_title in [f for f in filter_titles if len(f) > 0]:
+              rx = re.compile(filter_title)
+              subfiltered_pulls.extend(
+                  [pr for pr in filtered_pulls if rx.search(pr.title)]
+              )
+          filtered_pulls = tuniq.unique(subfiltered_pulls)
+
+      if filter_authors and len(filter_authors):
+          subfiltered_pulls = []
+          for filter_author in [f for f in filter_authors if len(f) > 0]:
+              rx = re.compile(filter_author)
+              subfiltered_pulls.extend(
+                  [pr for pr in filtered_pulls if rx.search(pr.user.login)]
+              )
+          filtered_pulls = tuniq.unique(subfiltered_pulls)
+
+      if filter_assignees and len(filter_assignees):
+          subfiltered_pulls = []
+          for filter_assignee in [f for f in filter_assignees if len(f) > 0]:
+              rx = re.compile(filter_assignee)
+              subfiltered_pulls.extend(
+                  [
+                      pr
+                      for pr in filtered_pulls
+                      if (pr.assignee and rx.search(pr.assignee.login))
+                      or len([ass for ass in pr.assignees if rx.search(ass)]) > 0
+                  ]
+              )
+          filtered_pulls = tuniq.unique(subfiltered_pulls)
+
+      if filter_branches and len(filter_branches):
+          subfiltered_pulls = []
+          for filter_branch in [f for f in filter_branches if len(f) > 0]:
+              rx = re.compile(filter_branch)
+              subfiltered_pulls.extend(
+                  [pr for pr in filtered_pulls if rx.search(pr.head.ref)]
+              )
+          filtered_pulls = tuniq.unique(subfiltered_pulls)
+
+      if filter_labels and len(filter_labels):
+          subfiltered_pulls = []
+          for filter_label in [f for f in filter_labels if len(f) > 0]:
+              rx = re.compile(filter_label)
+              subfiltered_pulls.extend(
+                  [
+                      pr
+                      for pr in filtered_pulls
+                      if len([l for l in pr.labels if rx.match(l.name)]) > 0
+                  ]
+              )
+          filtered_pulls = tuniq.unique(subfiltered_pulls)
+
+      pprint.pp([(pr.id, pr.number, pr.title) for pr in filtered_pulls])
+
+      ids = [str(pr.id) for pr in filtered_pulls]
+      numbers = [str(pr.number) for pr in filtered_pulls]
+      branches = [pr.head.ref for pr in filtered_pulls]
+      shas = [pr.head.sha for pr in filtered_pulls]
+      base_branches = [pr.base.ref for pr in filtered_pulls]
+      base_shas = [pr.base.sha for pr in filtered_pulls]
+      pullrequests = [r.raw_data for r in filtered_pulls]
+
+      ## decimate unrequired data to avoid gha JSON parser issues
+      ## reason: there are seriously parser issues arising when the JSON string fed to fromJSON is too large
+      for pr in pullrequests:
+          del pr["_links"]
+          del pr["user"]
+          del pr["head"]["user"]
+          del pr["base"]["user"]
+          # delete everything but .default_branch
+          pr["head"]["repo"] = {
+              "default_branch": pr["head"]["repo"]["default_branch"]
+          }
+          pr["base"]["repo"] = {
+              "default_branch": pr["base"]["repo"]["default_branch"]
+          }
+
+      pullrequests_json_escaped = json.dumps(json.dumps(pullrequests))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"ids={' '.join(ids)}")
+          print(f"ids={' '.join(ids)}", file=fh)
+          print(f"numbers={' '.join(numbers)}")
+          print(f"numbers={' '.join(numbers)}", file=fh)
+          print(f"branches={' '.join(branches)}")
+          print(f"branches={' '.join(branches)}", file=fh)
+          print(f"shas={' '.join(shas)}")
+          print(f"shas={' '.join(shas)}", file=fh)
+          print(f"base_branches={' '.join(base_branches)}")
+          print(f"base_branches={' '.join(base_branches)}", file=fh)
+          print(f"base_shas={' '.join(base_shas)}")
+          print(f"base_shas={' '.join(base_shas)}", file=fh)
+          print(f"pullrequests={pullrequests_json_escaped}")
+          print(f"pullrequests={pullrequests_json_escaped}", file=fh)
+          print(f"count={len(ids)}")
+          print(f"count={len(ids)}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/gh/get-pullrequests/action.yml#verify-outputs
+      steps.get-pullrequests.outputs.ids
+      ${{steps.get-pullrequests.outputs.ids}}
+
+      steps.get-pullrequests.outputs.numbers
+      ${{steps.get-pullrequests.outputs.numbers}}
+
+      steps.get-pullrequests.outputs.branches
+      ${{steps.get-pullrequests.outputs.branches}}
+
+      steps.get-pullrequests.outputs.shas
+      ${{steps.get-pullrequests.outputs.shas}}
+
+      steps.get-pullrequests.outputs.base_branches
+      ${{steps.get-pullrequests.outputs.base_branches}}
+
+      steps.get-pullrequests.outputs.base_shas
+      ${{steps.get-pullrequests.outputs.base_shas}}
+
+      steps.get-pullrequests.outputs.count
+      ${{steps.get-pullrequests.outputs.count}}
+
+      steps.get-pullrequests.outputs.pullrequests
+      ${{steps.get-pullrequests.outputs.pullrequests}}
+      ${{fromJSON(steps.get-pullrequests.outputs.pullrequests)}}
