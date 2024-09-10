@@ -9,11 +9,6 @@ inputs:
       Repository in `owner/repo` format for which to get the pull requests
     required: false
     default: ${{github.repository}}
-  api-url:
-    description: >
-      GitHub (Enterprise) instance API URL (including protocol).
-    required: false
-    default: ${{github.api_url}}
   graphql-url:
     description: >
       GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
@@ -28,13 +23,6 @@ inputs:
       triggering of on-release workflows.
     required: false
     default: ${{github.token}}
-  base-ref:
-    description: >
-      Base branch name used to retrieve pull requests that merge into the given base
-      branch.
-      Defaults to 'main', can be explicitly set to empty to retrieve all pull requests
-    required: false
-    default: main
 
   filter-title:
     description: >
@@ -60,125 +48,151 @@ inputs:
       Empty (default) means no filter.
     required: false
     default: ''
+  filter-labels:
+    description: >
+      Filter regular expression applied on the pull requests labels.
+      Empty (default) means no filter.
+    required: false
+    default: ''
 
 
 outputs:
   ids:
     description: >
       The IDs identifying the pull requests as space-separated list.
-    value: ${{steps.get-pullrequests.outputs.ids}}
-  prs:
+    value: ${{steps.filter-pullrequests.outputs.ids}}
+  numbers:
     description: >
       The PR numbers identifying the pull requests as space-separated list.
-    value: ${{steps.get-pullrequests.outputs.prs}}
+    value: ${{steps.filter-pullrequests.outputs.numbers}}
   branches:
     description: >
       The branches identifying the pull requests as space-separated list.
-    value: ${{steps.get-pullrequests.outputs.branches}}
+    value: ${{steps.filter-pullrequests.outputs.branches}}
+  shas:
+    description: >
+      The respective Oids of each branch as space-separated list.
+    value: ${{steps.filter-pullrequests.outputs.shas}}
+  base-branches:
+    description: >
+      The respective base branches as space-separated list (aka base refs).
+    value: ${{steps.filter-pullrequests.outputs.base_branches}}
+  base-shas:
+    description: >
+      The respective base branch Oids as space-separated list (aka base refs).
+    value: ${{steps.filter-pullrequests.outputs.base_shas}}
   pullrequests:
     description: >
       JSON representation of the pull requests
-    value: ${{ fromJSON(steps.get-pullrequests.outputs.pullrequests) }}
+    value: ${{fromJSON(steps.filter-pullrequests.outputs.pullrequests)}}
+  count:
+    description: >
+      Number of retrieved pull requests
+    value: ${{steps.get-pullrequests.outputs.count}}
 
 runs:
   using: composite
   steps:
-  - name: Install dependencies
-    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
-    with:
-      packages: >-
-        requests
-
-  - id: get-pullrequests
-    name: Build
-    shell: python
+  - id: prepare-inputs
+    # TODO: make this a separate action
     env:
       inputs_repository: ${{inputs.repository}}
-      inputs_api_url: ${{inputs.api-url}}
-      inputs_graphql_url: ${{inputs.graphql-url}}
-      inputs_token: ${{inputs.token}}
-      inputs_base_ref: ${{inputs.base-ref}}
+    shell: python
+    run: |
+      import os
+
+      repository = str(os.getenv("inputs_repository"))
+      (owner, repo) = repository.split("/")
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"owner={owner}")
+          print(f"owner={owner}", file=fh)
+          print(f"repo={repo}")
+          print(f"repo={repo}", file=fh)
+
+  - id: query
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/query@main
+    with:
+      token: ${{inputs.token}}
+      graphql-query: |
+        query($owner: String!, $repo: String!, $count: Int!) {
+          repository(owner: $owner, name: $repo)
+          {
+            id,
+            name,
+            url,
+            allowUpdateBranch,
+            autoMergeAllowed,
+            pullRequests(
+              orderBy: {
+                direction : ASC,
+                field : CREATED_AT,
+              },
+              first: $count,
+              states: OPEN,
+            )
+            {
+              nodes
+              {
+                baseRefOid
+                baseRefName
+                headRefOid
+                headRefName
+                id
+                number
+                title
+                bodyText
+                permalink
+                resourcePath
+                state
+                mergeable
+                url
+                autoMergeRequest
+                {
+                  authorEmail
+                  commitHeadline
+                  commitBody
+                  enabledAt
+                  enabledBy{login}
+                  mergeMethod
+                }
+                author{login}
+              }
+            }
+          }
+        }
+      graphql-variables: |
+        {
+          "owner": "${{github.repository_owner}}",
+          "repo":  "${{steps.prepare-inputs.outputs.repo}}",
+          "count": 100
+        }
+  - id: filter-pullrequests
+    name: Get pull requests
+    shell: python
+    env:
+      inputs_pullrequests: ${{toJSON(steps.query.outputs.json)}}
       inputs_filter_title: ${{inputs.filter-title}}
       inputs_filter_author: ${{inputs.filter-author}}
       inputs_filter_assignee: ${{inputs.filter-assignee}}
       inputs_filter_branch: ${{inputs.filter-branch}}
+      inputs_filter_labels: ${{inputs.filter-labels}}
     run: |
-      import os, sys, re, json, requests, pprint
-      from urllib.parse import urlparse
+      import os, sys, re, json, pprint
 
-      token = str(os.getenv("inputs_token"))
-      if not token:
-          token = str(os.getenv("GITHUB_TOKEN"))
-
-      session = requests.Session()
-      if token and token != "":
-          session.headers["Authorization"] = f"Bearer {token}"
-
-      api_url = str(os.getenv("inputs_api_url"))
-      graphql_url = str(os.getenv("inputs_graphql_url"))
-      assert graphql_url
-      assert urlparse(graphql_url)
-      repository = str(os.getenv("inputs_repository"))
-      base_ref = str(os.getenv("inputs_base_ref"))
-
-      (owner, reponame) = repository.split("/")
+      inputs_pullrequests = str(os.getenv("inputs_pullrequests"))
+      print("inputs_pullrequests", inputs_pullrequests)
+      pulls_json = json.loads(json.loads(inputs_pullrequests))
 
       filter_title = str(os.getenv("inputs_filter_title"))
       filter_author = str(os.getenv("inputs_filter_author"))
       filter_assignee = str(os.getenv("inputs_filter_assignee"))
       filter_branch = str(os.getenv("inputs_filter_branch"))
+      filter_labels = str(os.getenv("inputs_filter_labels"))
 
-      query = (
-          r"""
-      query {{
-        repository(owner: "{owner}", name: "{name}")
-        {{
-          id,
-          name,
-          url,
-          pullRequests(
-            orderBy: {{
-              direction : DESC,
-              field : UPDATED_AT
-            }},
-            first: {count},
-            states: OPEN,
-          )
-          {{
-            nodes
-            {{
-              baseRefOid,
-              baseRefName,
-              headRefOid,
-              headRefName,
-              id,
-              number,
-              title,
-              bodyText,
-              permalink,
-              resourcePath,
-              state,
-              url,
-              author{{login}},
-            }}
-          }}
-        }}
-      }}
-      """
-      ).format(owner=owner, name=reponame, count=100)
+      pprint.pp(pulls_json)
 
-
-      print(query)
-
-      response = session.post(url=graphql_url, json={"query": query})
-      print("response status code: ", response.status_code)
-      if response.status_code == 200:
-          print("response : ", response.content)
-
-      response_data = response.json()
-      pprint.pp(response_data)
-
-      pulls = response_data["data"]["repository"]["pullRequests"]["nodes"]
+      pulls = pulls_json["data"]["repository"]["pullRequests"]["nodes"]
       pprint.pp(pulls)
 
       pprint.pp([(pr["id"], pr["number"], pr["title"]) for pr in pulls])
@@ -202,14 +216,26 @@ runs:
               filter(lambda pr: rx.search(pr["headRefName"]), filtered_pulls)
           )
 
+      if filter_labels and len(filter_labels) > 0:
+          rx = re.compile(filter_labels)
+          filtered_pulls = list(
+              filter(
+                  lambda pr: any(lambda l: rx.match(l["name"]), pr["labels"]),
+                  filtered_pulls,
+              )
+          )
+
       pprint.pp(filtered_pulls)
       pprint.pp([(pr["id"], pr["number"], pr["title"]) for pr in filtered_pulls])
 
       ids = [pr["id"] for pr in filtered_pulls]
       pprint.pp(ids)
-      prs = [str(pr["number"]) for pr in filtered_pulls]
-      pprint.pp(prs)
+      numbers = [str(pr["number"]) for pr in filtered_pulls]
+      pprint.pp(numbers)
       branches = [pr["headRefName"] for pr in filtered_pulls]
+      shas = [pr["headRefOid"] for pr in filtered_pulls]
+      base_branches = [pr["baseRefName"] for pr in filtered_pulls]
+      base_shas = [pr["baseRefOid"] for pr in filtered_pulls]
 
       pullrequests_json = json.dumps(filtered_pulls)
       pullrequests_json_escaped = json.dumps(pullrequests_json)
@@ -217,9 +243,17 @@ runs:
       with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
           print(f"ids={' '.join(ids)}")
           print(f"ids={' '.join(ids)}", file=fh)
-          print(f"prs={' '.join(prs)}")
-          print(f"prs={' '.join(prs)}", file=fh)
+          print(f"numbers={' '.join(numbers)}")
+          print(f"numbers={' '.join(numbers)}", file=fh)
           print(f"branches={' '.join(branches)}")
           print(f"branches={' '.join(branches)}", file=fh)
+          print(f"shas={' '.join(shas)}")
+          print(f"shas={' '.join(shas)}", file=fh)
+          print(f"base_branches={' '.join(base_branches)}")
+          print(f"base_branches={' '.join(base_branches)}", file=fh)
+          print(f"base_shas={' '.join(base_shas)}")
+          print(f"base_shas={' '.join(base_shas)}", file=fh)
           print(f"pullrequests={pullrequests_json_escaped}")
           print(f"pullrequests={pullrequests_json_escaped}", file=fh)
+          print(f"count={len(ids)}")
+          print(f"count={len(ids)}", file=fh)
