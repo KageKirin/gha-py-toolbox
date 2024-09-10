@@ -66,119 +66,109 @@ outputs:
   ids:
     description: >
       The IDs identifying the pull requests as space-separated list.
-    value: ${{steps.get-pullrequests.outputs.ids}}
+    value: ${{steps.filter-pullrequests.outputs.ids}}
   prs:
     description: >
       The PR numbers identifying the pull requests as space-separated list.
-    value: ${{steps.get-pullrequests.outputs.prs}}
+    value: ${{steps.filter-pullrequests.outputs.prs}}
   branches:
     description: >
       The branches identifying the pull requests as space-separated list.
-    value: ${{steps.get-pullrequests.outputs.branches}}
+    value: ${{steps.filter-pullrequests.outputs.branches}}
   pullrequests:
     description: >
       JSON representation of the pull requests
-    value: ${{ fromJSON(steps.get-pullrequests.outputs.pullrequests) }}
+    value: ${{ fromJSON(steps.filter-pullrequests.outputs.pullrequests) }}
 
 runs:
   using: composite
   steps:
-  - name: Install dependencies
-    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
-    with:
-      packages: >-
-        requests
+  - id: prepare-inputs
+    # TODO: make this a separate action
+    env:
+      inputs_repository: ${{inputs.repository}}
+    shell: python
+    run: |
+      import os
+      repository = str(os.getenv("inputs_repository"))
+      (owner, repo) = repository.split("/")
 
-  - id: get-pullrequests
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"owner={owner}")
+          print(f"owner={owner}", file=fh)
+          print(f"repo={repo}")
+          print(f"repo={repo}", file=fh)
+
+  - id: query
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/query@main
+    with:
+      token: ${{ secrets.GH_READONLY_TOKEN }}
+      graphql-query: |
+        query($owner: String!, $repo: String!, $count: Int!) {
+          repository(owner: $owner, name: $repo)
+          {
+            id,
+            name,
+            url,
+            pullRequests(
+              orderBy: {
+                direction : ASC,
+                field : CREATED
+              },
+              first: $count,
+              states: OPEN,
+            )
+            {
+              nodes
+              {
+                baseRefOid,
+                baseRefName,
+                headRefOid,
+                headRefName,
+                id,
+                number,
+                title,
+                bodyText,
+                permalink,
+                resourcePath,
+                state,
+                url,
+                author{login},
+              }
+            }
+          }
+        }
+      graphql-variables: |
+        {
+          "owner": "${{github.repository_owner}}",
+          "repo":  "${{steps.prepare-inputs.outputs.repo}}",
+          "count": 100
+        }
+  - id: filter-pullrequests
     name: Build
     shell: python
     env:
-      inputs_repository: ${{inputs.repository}}
-      inputs_api_url: ${{inputs.api-url}}
-      inputs_graphql_url: ${{inputs.graphql-url}}
-      inputs_token: ${{inputs.token}}
+      inputs_pullrequests: ${{toJSON(steps.query.outputs.json)}}
       inputs_base_ref: ${{inputs.base-ref}}
       inputs_filter_title: ${{inputs.filter-title}}
       inputs_filter_author: ${{inputs.filter-author}}
       inputs_filter_assignee: ${{inputs.filter-assignee}}
       inputs_filter_branch: ${{inputs.filter-branch}}
     run: |
-      import os, sys, re, json, requests, pprint
-      from urllib.parse import urlparse
+      import os, sys, re, json, pprint
 
-      token = str(os.getenv("inputs_token"))
-      if not token:
-          token = str(os.getenv("GITHUB_TOKEN"))
-
-      session = requests.Session()
-      if token and token != "":
-          session.headers["Authorization"] = f"Bearer {token}"
-
-      api_url = str(os.getenv("inputs_api_url"))
-      graphql_url = str(os.getenv("inputs_graphql_url"))
-      assert graphql_url
-      assert urlparse(graphql_url)
-      repository = str(os.getenv("inputs_repository"))
-      base_ref = str(os.getenv("inputs_base_ref"))
-
-      (owner, reponame) = repository.split("/")
+      inputs_pullrequests = str(os.getenv("inputs_pullrequests"))
+      print("inputs_pullrequests", inputs_pullrequests)
+      pulls_json = json.loads(json.loads(inputs_pullrequests))
 
       filter_title = str(os.getenv("inputs_filter_title"))
       filter_author = str(os.getenv("inputs_filter_author"))
       filter_assignee = str(os.getenv("inputs_filter_assignee"))
       filter_branch = str(os.getenv("inputs_filter_branch"))
 
-      query = (
-          r"""
-      query {{
-        repository(owner: "{owner}", name: "{name}")
-        {{
-          id,
-          name,
-          url,
-          pullRequests(
-            orderBy: {{
-              direction : DESC,
-              field : UPDATED_AT
-            }},
-            first: {count},
-            states: OPEN,
-          )
-          {{
-            nodes
-            {{
-              baseRefOid,
-              baseRefName,
-              headRefOid,
-              headRefName,
-              id,
-              number,
-              title,
-              bodyText,
-              permalink,
-              resourcePath,
-              state,
-              url,
-              author{{login}},
-            }}
-          }}
-        }}
-      }}
-      """
-      ).format(owner=owner, name=reponame, count=100)
+      pprint.pp(pulls_json)
 
-
-      print(query)
-
-      response = session.post(url=graphql_url, json={"query": query})
-      print("response status code: ", response.status_code)
-      if response.status_code == 200:
-          print("response : ", response.content)
-
-      response_data = response.json()
-      pprint.pp(response_data)
-
-      pulls = response_data["data"]["repository"]["pullRequests"]["nodes"]
+      pulls = pulls_json["data"]["repository"]["pullRequests"]["nodes"]
       pprint.pp(pulls)
 
       pprint.pp([(pr["id"], pr["number"], pr["title"]) for pr in pulls])
