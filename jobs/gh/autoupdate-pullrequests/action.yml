@@ -1,0 +1,165 @@
+name: GH (GraphQL) automatically update pull requests
+description: >
+  Automatically updates pull requests matching specified criteria via rebase.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:write" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  ## filter criteria
+  filter-title:
+    description: >
+      Filter regular expression applied on the pull requests title.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-author:
+    description: >
+      Filter regular expression applied on the pull requests author/submitter.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-assignee:
+    description: >
+      Filter regular expression applied on the pull requests assignee.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-branch:
+    description: >
+      Filter regular expression applied on the pull requests branch.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-labels:
+    description: >
+      Filter regular expression applied on the pull requests labels.
+      Empty (default) means no filter.
+    required: false
+    default: ''
+
+  # rate limit controls
+  count:
+    description: >
+      Maximum amount of pull requests to update.
+      Allows to stay within reasonable rate limits when there are many queued up pull
+      requests.
+    required: false
+    default: 42
+
+  ##
+  limit-to-next-mergeable:
+    description: >
+      Limit the updated PR to the next mergeable one, if it isn't up to its base branch
+    required: false
+    default: false
+
+  automerge-label:
+    description: label to be used for enabled automerge
+    required: false
+    default: automerge
+  ordered-label:
+    description: label to be used for enabled ordered automerge
+    required: false
+    default: ordered
+  priority-label:
+    description: label to be used for enabled priority automerge
+    required: false
+    default: priority
+
+  dry-run:
+    description: if true, do not perform actual update
+    required: false
+    default: 'true'
+
+outputs:
+  updated-pullrequests:
+    description: >
+      JSON representation of the updated pull requests
+    value: ${{ steps.update-pullrequests.outputs.updated-pullrequests || steps.update-next-mergeable.outputs.updated-pullrequests }}
+  count:
+    description: >
+      Number of updated pull requests
+    value: ${{ steps.update-pullrequests.outputs.count || steps.update-next-mergeable.outputs.count }}
+
+runs:
+  using: composite
+  steps:
+  - id: get-pullrequests
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/get-pullrequests@main
+    with:
+      repository: ${{inputs.repository}}
+      graphql-url: ${{inputs.graphql-url}}
+      token: ${{inputs.token}}
+      filter-title: ${{inputs.filter-title}}
+      filter-author: ${{inputs.filter-author}}
+      filter-assignee: ${{inputs.filter-assignee}}
+      filter-branch: ${{inputs.filter-branch}}
+      filter-labels: ${{inputs.filter-labels}}
+
+  ## retrieve info for base branches (usually only 'main')
+  - id: get-base-branches
+    name: Get base branch information
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/get-branches@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      filter-branch: ${{ steps.get-pullrequests.outputs.base-branches }}
+
+  ## select PR for updating
+  - id: get-candidate-pr
+    name: Get base branch information
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/get-next-pullrequest-update-candidate@main
+    with:
+      pullrequests: ${{ steps.get-pullrequests.outputs.pullrequests }}
+      base-branches: ${{ steps.get-base-branches.outputs.branches }}
+      automerge-label: ${{ inputs.automerge-label }}
+      ordered-label: ${{ inputs.ordered-label }}
+      priority-label: ${{ inputs.priority-label }}
+
+  - id: update-pullrequests
+    if: ${{ steps.get-candidate-pr.outputs.number > 0 }}
+    continue-on-error: true
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/update-pullrequests@main
+    with:
+      repository: ${{inputs.repository}}
+      graphql-url: ${{inputs.graphql-url}}
+      token: ${{inputs.token}}
+      count: 1
+      pullrequests: '[ ${{ steps.get-candidate-pr.outputs.pullrequest }} ]'
+      #pullrequests: ${{ format('[ {0} ]', steps.get-mergeable-pr.outputs.pullrequest) }}
+      pullrequest-branch-update-method: REBASE
+      dry-run: ${{ inputs.dry-run }}
+
+  - id: update-pullrequests-the-hard-way
+    if: ${{ steps.update-pullrequests.outcome == 'failure' }}
+    uses: kagekirin/gha-py-toolbox/macros/gh/update-pullrequest@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      pullrequest: ${{ steps.get-candidate-pr.outputs.pullrequest }}
+      dry-run: ${{ inputs.dry-run }}
