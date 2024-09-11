@@ -1,0 +1,152 @@
+name: GH GRAPHQL toogle pull request automerge
+description: >
+  Enable or disable automerge for a given pull request.
+
+inputs:
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:write" permissions for the
+      given repository.
+    required: false
+    default: ${{github.token}}
+  pullrequest:
+    description: >
+      JSON representation of the pull request with at least the fields
+      - id
+      - headRefOid
+      This can be obtained via the ghgql/get-pullrequest(s) actions.
+    required: true
+  toggle:
+    description: >
+      bool to control whether to enable or disable automerge on the pull request
+    required: true
+    default: true
+
+
+outputs:
+  pullrequest:
+    description: >
+      JSON representation of the pull request.
+    value: ${{ inputs.toggle == 'true' && steps.query-enable.outputs.json || steps.query-disable.outputs.json }}
+
+
+runs:
+  using: composite
+  steps:
+  - id: mutation-id
+    shell: python
+    run: |
+      import os, uuid
+
+      mutation_id = uuid.uuid3().replace('-', '')
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"id={mutation_id}")
+          print(f"id={mutation_id}", file=fh)
+
+  - id: query-enable
+    if: ${{ inputs.toggle == 'true' }}
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/query@main
+    with:
+      token: ${{inputs.token}}
+      graphql-query: |
+        mutation($mutationId: String!, $branchHeadOid: GitObjectID!, $pullRequestId: ID!)
+        {
+          enablePullRequestAutoMerge(input: {
+            clientMutationId: $mutationId,
+            expectedHeadOid: $branchHeadOid,
+            jump: false,
+            pullRequestId: $pullRequestId,
+          })
+          {
+            clientMutationId
+            actor{login}
+            pullRequest
+            {
+              baseRefOid
+              baseRefName
+              headRefOid
+              headRefName
+              id
+              number
+              title
+              bodyText
+              permalink
+              resourcePath
+              state
+              mergeable
+              url
+              autoMergeRequest
+              {
+                authorEmail
+                commitHeadline
+                commitBody
+                enabledAt
+                enabledBy{login}
+                mergeMethod
+              }
+              author{login}
+            }
+          }
+        }
+
+      graphql-variables: |
+        {
+          "mutationId":    ${{steps.mutation-id.outputs.id}},
+          "branchHeadOid": ${{inputs.pullrequest.headRefOid}},
+          "pullRequestId": ${{inputs.pullrequest.id}}
+        }
+
+  - id: query-disable
+    if: ${{ inputs.toggle == 'false' }}
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/query@main
+    with:
+      token: ${{inputs.token}}
+      graphql-query: |
+        mutation($mutationId: String!, $pullRequestId: ID!)
+        {
+          disablePullRequestAutoMerge(input: {
+            clientMutationId: $mutationId,
+            pullRequestId: $pullRequestId,
+          })
+          {
+            clientMutationId
+            actor{login}
+            pullRequest
+            {
+              baseRefOid
+              baseRefName
+              headRefOid
+              headRefName
+              id
+              number
+              title
+              bodyText
+              permalink
+              resourcePath
+              state
+              mergeable
+              url
+              autoMergeRequest
+              {
+                authorEmail
+                commitHeadline
+                commitBody
+                enabledAt
+                enabledBy{login}
+                mergeMethod
+              }
+              author{login}
+            }
+          }
+        }
+
+      graphql-variables: |
+        {
+          "mutationId":    ${{steps.mutation-id.outputs.id}},
+          "pullRequestId": ${{inputs.pullrequest.id}}
+        }
