@@ -1,0 +1,277 @@
+name: GH GRAPHQL get pull request
+description: >
+  Retrieves the current pull request via GraphQL.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  number:
+    description: >
+      The pull request NUMBER, if known.
+      Allows to retrieve the PR without searching from its branch.
+
+      WARNING: the PR NUMBER is not the PR ID
+    required: false
+  branch:
+    description: >
+      The full reference of the branch to get the pull request for.
+      The value will be truncated internally to only contain the part after `refs/heads/`.
+    required: true
+    default: ${{github.ref}}
+
+
+outputs:
+  id:
+    description: >
+      The GraphQL node ID identifying the pull request.
+    value: ${{steps.get-pullrequest.outputs.id}}
+  number:
+    description: >
+      The PR number identifying the pull request.
+    value: ${{steps.get-pullrequest.outputs.number}}
+  branch:
+    description: >
+      The branch identifying the pull request.
+    value: ${{steps.get-pullrequest.outputs.branch}}
+  sha:
+    description: >
+      The branch's head Oid.
+    value: ${{steps.get-pullrequest.outputs.sha}}
+  base-branch:
+    description: >
+      The branch's base branch.
+    value: ${{steps.get-pullrequest.outputs.base_branch}}
+  base-sha:
+    description: >
+      The branch's base branch Oid, i.e. fork point.
+    value: ${{steps.get-pullrequest.outputs.base_sha}}
+  pullrequest:
+    description: >
+      JSON representation of the pull request.
+    value: ${{fromJSON(steps.get-pullrequest.outputs.pullrequest)}}
+
+runs:
+  using: composite
+  steps:
+  - id: prepare-inputs
+    # TODO: make this a separate action
+    env:
+      inputs_repository: ${{inputs.repository}}
+    shell: python
+    run: |
+      ## actions/ghgql/get-pullrequest/action.yml#prepare-inputs
+      import os
+
+      repository = str(os.getenv("inputs_repository"))
+      (owner, repo) = repository.split("/")
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"owner={owner}")
+          print(f"owner={owner}", file=fh)
+          print(f"repo={repo}")
+          print(f"repo={repo}", file=fh)
+
+  - id: get-branch-name
+    if: ${{inputs.branch != ''}}
+    env:
+      branch_ref: ${{inputs.branch}}
+    shell: python
+    run: |
+      ## actions/ghgql/get-pullrequest/action.yml#get-branch-name
+      import os
+
+      branch_ref = str(os.getenv("branch_ref"))
+      branch_ref_name = branch_ref.replace("refs/heads/", "")
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"ref_name={branch_ref_name}")
+          print(f"ref_name={branch_ref_name}", file=fh)
+
+  - id: query-by-branch
+    if: ${{inputs.branch != ''}}
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/query@main
+    with:
+      token: ${{inputs.token}}
+      graphql-query: |
+        query($owner: String!, $repo: String!, $branch: String!) {
+          repository(owner: $owner, name: $repo)
+          {
+            id,
+            name,
+            url,
+            allowUpdateBranch,
+            autoMergeAllowed,
+            pullRequests(headRefName: $branch,
+              orderBy: {
+                direction : DESC,
+                field : UPDATED_AT
+              },
+              states: OPEN,
+              first : 1,
+            )
+            {
+              nodes
+              {
+                baseRefOid
+                baseRefName
+                headRefOid
+                headRefName
+                id
+                number
+                title
+                bodyText
+                permalink
+                resourcePath
+                state
+                mergeable
+                url
+                autoMergeRequest
+                {
+                  authorEmail
+                  commitHeadline
+                  commitBody
+                  enabledAt
+                  enabledBy{login}
+                  mergeMethod
+                }
+                author{login}
+              }
+            }
+          }
+        }
+      graphql-variables: |
+        {
+          "owner":  "${{github.repository_owner}}",
+          "repo":   "${{steps.prepare-inputs.outputs.repo}}",
+          "branch": "${{steps.get-branch-name.outputs.ref_name}}"
+        }
+
+  - id: query-by-number
+    if: ${{inputs.number != ''}}
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/query@main
+    with:
+      token: ${{inputs.token}}
+      graphql-query: |
+        query($owner: String!, $repo: String!, $number: String!) {
+          repository(owner: $owner, name: $repo)
+          {
+            id,
+            name,
+            url,
+            allowUpdateBranch,
+            autoMergeAllowed,
+            pullRequests(number: $number,
+              orderBy: {
+                direction : DESC,
+                field : UPDATED_AT
+              },
+              states: OPEN,
+              first : 1,
+            )
+            {
+              nodes
+              {
+                baseRefOid
+                baseRefName
+                headRefOid
+                headRefName
+                id
+                number
+                title
+                bodyText
+                permalink
+                resourcePath
+                state
+                mergeable
+                url
+                autoMergeRequest
+                {
+                  authorEmail
+                  commitHeadline
+                  commitBody
+                  enabledAt
+                  enabledBy{login}
+                  mergeMethod
+                }
+                author{login}
+              }
+            }
+          }
+        }
+      graphql-variables: |
+        {
+          "owner":  "${{github.repository_owner}}",
+          "repo":   "${{steps.prepare-inputs.outputs.repo}}",
+          "number": "${{inputs.number}}"
+        }
+
+  - id: get-pullrequest
+    name: Get pull request
+    shell: python
+    env:
+      inputs_pullrequest_by_branch: ${{steps.query-by-branch.outputs.json}}
+      inputs_pullrequest_by_number: ${{steps.query-by-number.outputs.json}}
+    run: |
+      ## actions/ghgql/get-pullrequest/action.yml#get-pullrequest
+      import os, sys, re, json, pprint
+
+      pulls_json = None
+      inputs_pullrequest_by_branch = str(os.getenv("inputs_pullrequest_by_branch"))
+
+      if inputs_pullrequest_by_branch is not None:
+          print("inputs_pullrequest_by_branch", inputs_pullrequest_by_branch)
+          pulls_json = json.loads(inputs_pullrequest_by_branch)
+
+      inputs_pullrequest_by_number = str(os.getenv("inputs_pullrequest_by_number"))
+      if inputs_pullrequest_by_number is not None:
+          print("inputs_pullrequest_by_number", inputs_pullrequest_by_number)
+          pulls_json = json.loads(inputs_pullrequest_by_number)
+
+      assert pulls_json is not None
+
+      filter_title = str(os.getenv("inputs_filter_title"))
+      filter_author = str(os.getenv("inputs_filter_author"))
+      filter_assignee = str(os.getenv("inputs_filter_assignee"))
+      filter_branch = str(os.getenv("inputs_filter_branch"))
+
+      pprint.pp(pulls_json)
+
+      pull = pulls_json["data"]["repository"]["pullRequests"]["nodes"][0]
+      pprint.pp(pull)
+
+      pullrequest_json = json.dumps(pull)
+      pullrequest_json_escaped = json.dumps(pullrequest_json)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"id={pull['id']}")
+          print(f"id={pull['id']}", file=fh)
+          print(f"number={pull['number']}")
+          print(f"number={pull['number']}", file=fh)
+          print(f"branch={pull['headRefName']}")
+          print(f"branch={pull['headRefName']}", file=fh)
+          print(f"sha={pull['headRefOid']}")
+          print(f"sha={pull['headRefOid']}", file=fh)
+          print(f"base_branch={pull['baseRefName']}")
+          print(f"base_branch={pull['baseRefName']}", file=fh)
+          print(f"base_sha={pull['baseRefOid']}")
+          print(f"base_sha={pull['baseRefOid']}", file=fh)
+          print(f"pullrequest={pullrequest_json_escaped}")
+          print(f"pullrequest={pullrequest_json_escaped}", file=fh)
