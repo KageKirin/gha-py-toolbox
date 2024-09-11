@@ -1,0 +1,122 @@
+# https://dot.net/v1/dotnet-install.sh
+
+name: .NET installer-based setup
+description: >-
+  Downloads and installs .NET at the given version and for the given platform
+  using the official installer script.
+
+  **WARNING: only Linux supported for now**
+
+inputs:
+  download-url:
+    description: >
+      The URL mentioned as 'Direct link' under the Manual Installation
+      section of https://dotnet.microsoft.com/en-us/download/dotnet
+    required: true
+  download-checksum:
+    description: >
+      The checksum for the above URL as mentioned as 'Checksum (SHA512)' under the
+      Manual Installation
+      section of https://dotnet.microsoft.com/en-us/download/dotnet
+    required: true
+  dotnet-path:
+    description: path where to install .NET to
+    required: true
+    default: .dotnet
+  dotnet-temp:
+    description: temp path where to download .NET installers to
+    required: true
+    default: .dotnetsetup
+
+outputs:
+  dotnet-exe:
+    description: full path to `dotnet` executable
+    value: ${{steps.download-unpack.outputs.dotnet}}
+  dotnet-path:
+    description: full path to `dotnet` installation folder
+    value: ${{steps.download-unpack.outputs.path}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: download-unpack
+    name: Download and unpack ${{inputs.download-url}} into ${{inputs.dotnet-path}}
+    shell: python
+    env:
+      download_url: ${{inputs.download-url}}
+      download_checksum: ${{inputs.download-checksum}}
+      dotnet_temp: ${{inputs.dotnet-temp}}
+      dotnet_path: ${{inputs.dotnet-path}}
+    run: |
+      ## actions/dotnet/setup/action.yml#download-unpack
+      import os, sys, hashlib
+      from pathlib import Path
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      download_url = str(os.getenv("download_url"))
+      assert download_url is not None
+      assert urlparse(download_url) is not None
+
+      download_checksum = str(os.getenv("download_checksum"))
+      assert download_checksum is not None
+
+      dotnet_temp = Path(os.getenv("dotnet_temp"))
+      assert dotnet_temp is not None
+      dotnet_temp.mkdir(parents=True, exist_ok=True)
+
+      ## download
+      dotnet_temp_dl = dotnet_temp.joinpath("dotnet.tar.gz")
+      err = os.waitstatus_to_exitcode(
+          os.system(
+              f"curl -L --retry 100 --retry-max-time 500 --retry-all-errors -o{dotnet_temp_dl} {download_url}"
+          )
+      )
+      assert err == 0
+      assert dotnet_temp_dl.is_file()
+
+      ## verify
+      checksum = hashlib.sha512(dotnet_temp_dl.read_bytes())
+      assert checksum.hexdigest() == download_checksum
+
+      ## create dotnet folder
+      dotnet_path = Path(os.getenv("dotnet_path"))
+      assert dotnet_path is not None
+      if dotnet_path.exists():
+          dotnet_path.unlink()
+      dotnet_path.mkdir(parents=True, exist_ok=True)
+
+      ## unpack
+      err = os.waitstatus_to_exitcode(
+          os.system(f"tar -xf {dotnet_temp_dl} -C {dotnet_path}")
+      )
+      assert err == 0
+
+      ## return
+      dotnet_exe = dotnet_path.joinpath("dotnet")
+      assert dotnet_path.is_dir()
+      assert dotnet_exe.is_file()
+
+      with open(os.environ["GITHUB_PATH"], "a") as fh:
+          print(f"{dotnet_path}", file=fh)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"dotnet={dotnet_exe.absolute()}")
+          print(f"dotnet={dotnet_exe.absolute()}", file=fh)
+          print(f"path={dotnet_path.absolute()}")
+          print(f"path={dotnet_path.absolute()}", file=fh)
+
+  - id: test-dotnet-exe
+    name: Test installed `dotnet` command
+    shell: python
+    run: |
+      ## actions/dotnet/setup/action.yml#test-dotnet-exe
+      import os, sys, shutil
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      print(shutil.which("dotnet"))
+      err = os.waitstatus_to_exitcode(os.system("dotnet --version"))
+      exit(err)
