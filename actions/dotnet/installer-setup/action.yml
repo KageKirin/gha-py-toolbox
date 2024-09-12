@@ -1,0 +1,153 @@
+name: .NET installer-based setup
+description: >-
+  Downloads and installs .NET at the given version and for the given platform
+  using the official installer script.
+
+  **WARNING: only Linux supported for now**
+
+inputs:
+  options:
+    description: >-
+      List of .NET options to install.
+
+      Multiline, use whitespace/newline to separate items.
+    required: true
+    default: |
+      --version latest
+  accept-license:
+    description: >-
+      Whether you accept the .NET license.
+
+      Must be explicitly set by the caller.
+    required: true
+  dotnet-path:
+    description: path where to install .NET to
+    required: true
+    default: .dotnet
+  dotnet-temp:
+    description: temp path where to download .NET installers to
+    required: true
+    default: .dotnetsetup
+
+
+outputs:
+  dotnet-exe:
+    description: full path to `dotnet` executable
+    value: ${{steps.install-dotnet.outputs.dotnet}}
+  dotnet-path:
+    description: full path to `dotnet` installation folder
+    value: ${{steps.install-dotnet.outputs.path}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download-installer
+    name: Download installer from https://dot.net/v1/dotnet-install.sh
+    shell: python
+    env:
+      installer_url: https://dot.net/v1/dotnet-install.sh
+      dotnet_temp: ${{inputs.dotnet-temp}}
+    run: |
+      ## actions/dotnet/installer-setup/action.yml#download-installer
+      import os, sys, requests, shutil
+      from pathlib import Path
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      dotnet_temp = Path(os.getenv("dotnet_temp"))
+      dotnet_temp.mkdir(parents=True, exist_ok=True)
+
+      installer_url = str(os.getenv("installer_url"))
+      assert installer_url is not None
+      assert urlparse(installer_url) is not None
+
+      installer_path = Path.joinpath(dotnet_temp, Path(installer_url).name)
+
+      with requests.get(installer_url, stream=True) as r:
+          if not r.ok:
+              print(
+                  f"failed to access {installer_url} with status {r.status_code} {r.reason}"
+              )
+          assert r.ok
+          if r.ok:
+              with installer_path.open("wb") as fh:
+                  shutil.copyfileobj(r.raw, fh)
+              installer_path.chmod(0o777)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"path={installer_path}")
+          print(f"path={installer_path}", file=fh)
+
+  - id: install-dotnet
+    name: Run installer from ${{steps.download-installer.outputs.path}}
+    shell: python
+    env:
+      installer_path: ${{steps.download-installer.outputs.path}}
+      dotnet_options: ${{inputs.options}}
+      accept_license: ${{inputs.accept-license}}
+      DOTNET_INSTALL_DIR: ${{inputs.dotnet-path}}
+    run: |
+      ## actions/dotnet/installer-setup/action.yml#install-dotnet
+      import os, sys, requests, subprocess, platform, shutil
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      installer_path = Path(os.getenv("installer_path"))
+      assert installer_path is not None
+
+      dotnet_path = Path(os.getenv("DOTNET_INSTALL_DIR"))
+      assert dotnet_path is not None
+
+      dotnet_options = list(str(os.getenv("dotnet_options")).split())
+      accept_license = os.getenv("accept_license") == "true"
+
+      if "--install-dir" in dotnet_options:
+          dotnet_path = dotnet_options[dotnet_options.index("--install-dir") + 1]
+
+      assert installer_path.exists()
+      err = os.waitstatus_to_exitcode(os.system(f"{installer_path} --help"))
+      assert err == 0
+
+      cmd = f"{installer_path} " + " ".join(dotnet_options)
+      print(cmd)
+      err = os.waitstatus_to_exitcode(os.system(cmd))
+      assert err == 0
+
+      exe_ext = ".exe" if platform.system() == "Windows" else ""
+      dotnet_exe = dotnet_path.joinpath(f"dotnet{exe_ext}")
+
+      if shutil.which("dotnet") is not None:
+          dotnet_exe = Path(shutil.which("dotnet"))
+          dotnet_path = dotnet_exe.parent
+
+      print("dotnet", dotnet_exe)
+      print("dotnet path", dotnet_path)
+
+      with open(os.environ["GITHUB_PATH"], "a") as fh:
+          print(f"{dotnet_path}", file=fh)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"dotnet={dotnet_exe.absolute()}")
+          print(f"dotnet={dotnet_exe.absolute()}", file=fh)
+          print(f"path={dotnet_path.absolute()}")
+          print(f"path={dotnet_path.absolute()}", file=fh)
+
+  - id: test-dotnet-exe
+    name: Test installed `dotnet` command
+    shell: python
+    run: |
+      ## actions/dotnet/installer-setup/action.yml#test-dotnet-exe
+      import os, sys, shutil
+
+      print(shutil.which("dotnet"))
+      err = os.waitstatus_to_exitcode(os.system("dotnet --version"))
+      exit(err)
