@@ -1,0 +1,102 @@
+name: .NET Test
+description: >
+  Script to test .NET Solution or Projects
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  configurations:
+    description: >
+      configuration(s) to test for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to test for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to test
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet test`
+      whitespace separated list.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: test
+    name: Test
+    shell: python
+    env:
+      test_path: ${{inputs.path}}
+      test_configurations: ${{inputs.configurations}}
+      test_frameworks: ${{inputs.frameworks}}
+      test_projects: ${{inputs.projects}}
+      test_options: ${{inputs.options}}
+    run: |
+      ## actions/dotnet/test/action.yml#test
+      import os, sys, itertools, subprocess, pprint
+      from pathlib import Path
+      from contextlib import chdir
+      from subprocess import CalledProcessError
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(str(os.getenv("test_path"))):
+          configurations = list(str(os.getenv("test_configurations")).split())
+          frameworks = list(str(os.getenv("test_frameworks")).split())
+          options = " ".join(list(str(os.getenv("test_options")).split()))
+
+          projects = str(os.getenv("test_projects")).split()
+          projects = [
+              p
+              for p in map(
+                  lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects
+              )
+          ]
+          projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+
+          if len(configurations) == 0:
+              configurations.append("")
+
+          if len(frameworks) == 0:
+              frameworks.append("")
+
+          if len(projects) == 0:
+              projects.append("")
+
+          res = [
+              [p, c, f] for p in projects for c in configurations for f in frameworks
+          ]
+
+          err = 0
+          for r in res:
+              try:
+                  print(f"testing {r[0]} {r[1]} {r[2]}")
+                  project = r[0]
+                  config = f"--configuration {r[1]}" if len(r[1]) > 0 else ""
+                  framework = f"--framework {r[2]}" if len(r[2]) > 0 else ""
+                  command = f"dotnet test {options} {config} {framework} {project}"
+                  print(command, flush=True)
+                  # pprint.pp(os.environ)
+                  subprocess.check_call(command.split())
+              except CalledProcessError as ex:
+                  print(f"ERROR: {ex}")
+                  err = ex.returncode
+
+          exit(err)
