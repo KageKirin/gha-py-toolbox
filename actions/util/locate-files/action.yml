@@ -1,0 +1,99 @@
+name: UTIL locate files
+description: >
+  Locates files following input parameters.
+
+inputs:
+  patterns:
+    description: >
+      The search patterns (several possible).
+      Whitespace-separated list.
+      Defaults to wildcard patterns (e.g. `**/*.ext`)
+      but regular expressions are possible if enclosed in `/` (e.g. `/\w+\.(ext)$`).
+      NOTE: regular expression that partially match the full filepath are considered
+      positives.
+    required: true
+    default: ${{github.workspace}}
+  path:
+    description: >
+      The path where to look for the files.
+      Defaults to github.workspace.
+    required: true
+    default: ${{github.workspace}}
+  depth:
+    description: >
+      Recursion depth for search.
+      Negative value for full depth.
+    required: true
+    default: -1
+
+outputs:
+  count:
+    description: >
+      Number of located files
+    value: ${{steps.search.outputs.count}}
+  files:
+    description: >
+      The located files as whitespace-separated list.
+    value: ${{steps.search.outputs.files}}
+  json:
+    description: >
+      The located files as JSON array.
+    value: ${{fromJSON(steps.search.outputs.json)}}
+
+runs:
+  using: composite
+  steps:
+  - id: search
+    name: Search
+    shell: python
+    env:
+      input_patterns: ${{inputs.patterns}}
+      input_path: ${{inputs.path}}
+      input_depth: ${{inputs.depth}}
+    run: |
+      ## actions/util/locate-files/action.yml#search
+      import os, re, json
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      patterns = list(str(os.getenv("input_patterns", "*.*")).split())
+      assert patterns is not None
+      assert len(patterns) > 0
+
+      path = Path(os.getenv("input_path", "."))
+      assert path is not None
+
+      depth = int(os.getenv("input_depth", "-1"))
+      assert depth is not None
+
+      files = []
+      if path.is_dir():
+          for dirpath, dirnames, filenames in os.walk(path):
+              _dir = Path(dirpath).joinpath("placeholder")
+              if depth < 0 or str(_dir).count(os.sep) <= depth:
+                  print("traversing", Path(dirpath))
+                  dirfiles = [Path(dirpath).joinpath(f) for f in filenames]
+                  files += dirfiles
+
+      filtered_files = set()
+      for pattern in patterns:
+          if pattern.startswith("/") and pattern.endswith("/"):
+              rx = re.compile(pattern[1:-1])
+              assert rx is not None
+              filtered_files.update(
+                  [f for f in files if rx.search(str(f)) is not None]
+              )
+          else:
+              filtered_files.update([f for f in files if f.match(pattern)])
+
+      files_str = [str(f) for f in filtered_files]
+      files_json = json.dumps(json.dumps(files_str))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"count={len(filtered_files)}")
+          print(f"count={len(filtered_files)}", file=fh)
+          print(f"files={' '.join(files_str)}")
+          print(f"files={' '.join(files_str)}", file=fh)
+          print(f"json={files_json}")
+          print(f"json={files_json}", file=fh)
