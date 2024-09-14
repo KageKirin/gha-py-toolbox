@@ -1,0 +1,42 @@
+name: UTIL setup system
+description: >-
+  Macro to set up a system with Good Defaults (TM).
+  Calls into regular actions/setup-xxx for setup.
+
+inputs:
+  systems:
+    description: >
+      The systems to install.
+      Whitespace-separated list.
+
+      Possible values are:
+      `dotnet` (.net 8.0.x)
+      `python` (python 3.12)
+      `node` (latest)
+    required: true
+    default: ''
+
+
+runs:
+  using: composite
+  steps:
+  - if: ${{inputs.systems.contains('python')}}
+    id: setup-python
+    uses: actions/setup-python@v4
+    with:
+      python-version: '3.12'
+      cache: 'pip'
+
+  - if: ${{inputs.systems.contains('dotnet')}}
+    id: setup-dotnet
+    uses: actions/setup-dotnet@v4
+    with:
+      dotnet-version: '8.0.x'
+      cache: true
+
+  - if: ${{inputs.systems.contains('node')}}
+    id: setup-node
+    uses: actions/setup-node@v4
+    with:
+      node-version: latest
+      cache: 'npm'
