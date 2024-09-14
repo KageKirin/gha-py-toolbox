@@ -1,0 +1,56 @@
+name: UTIL setup system
+description: >-
+  Macro to set up a system with Good Defaults (TM).
+  Calls into regular actions/setup-xxx for setup.
+
+inputs:
+  systems:
+    description: >
+      The systems to install.
+      Whitespace-separated list.
+
+      Possible values are:
+      `dotnet` (.net 8.0.x)
+      `python` (python 3.12)
+      `node` (latest)
+    required: true
+    default: ''
+  token:
+    description: >
+      The token used to authenticate when fetching Python/Node distributions.
+      When running on GHES, you can pass a personal access token for github.com if
+      you are experiencing rate limiting.
+    required: false
+    default: ${{github.token}}
+
+
+runs:
+  using: composite
+  steps:
+  - if: ${{contains(inputs.systems, 'python')}}
+    id: setup-python
+    continue-on-error: true
+    uses: actions/setup-python@v4
+    with:
+      python-version: '3.12'
+      token: ${{inputs.token}}
+  - if: ${{contains(inputs.systems, 'python') && steps.setup-python.outcome.conclusion != 'success'}}
+    id: setup-python-via-apt-get
+    shell: bash
+    run: |
+      sudo apt-get install python3
+      pypath=$(which python3)
+      sudo ln -s $pypath $(dirname $pypath)/python
+
+  - if: ${{contains(inputs.systems, 'dotnet')}}
+    id: setup-dotnet
+    uses: actions/setup-dotnet@v4
+    with:
+      dotnet-version: 8.0.x
+
+  - if: ${{contains(inputs.systems, 'node')}}
+    id: setup-node
+    uses: actions/setup-node@v4
+    with:
+      node-version: latest
+      token: ${{inputs.token}}
