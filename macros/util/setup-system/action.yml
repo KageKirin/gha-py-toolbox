@@ -1,0 +1,80 @@
+name: UTIL setup system
+description: >-
+  Macro to set up a system with Good Defaults (TM).
+  Calls into regular actions/setup-xxx for setup.
+
+inputs:
+  systems:
+    description: >
+      The systems to install.
+      Whitespace-separated list.
+
+      Possible values are:
+      `dotnet` (.net 8.0.x)
+      `python` (python 3.12)
+      `node` (latest)
+    required: true
+    default: ''
+  token:
+    description: >
+      The token used to authenticate when fetching Python/Node distributions.
+      When running on GHES, you can pass a personal access token for github.com if
+      you are experiencing rate limiting.
+    required: false
+    default: ${{github.token}}
+
+
+runs:
+  using: composite
+  steps:
+  - if: ${{contains(inputs.systems, 'git')}}
+    id: setup-git
+    shell: bash
+    run: |
+      sudo add-apt-repository -y ppa:git-core/ppa
+      sudo apt-get update
+      sudo apt-get install -y git
+      git config --global init.defaultBranch main
+
+  - if: ${{contains(inputs.systems, 'python')}}
+    id: setup-python
+    continue-on-error: true
+    uses: actions/setup-python@v4
+    with:
+      python-version: '3.12'
+      token: ${{inputs.token}}
+  - if: ${{contains(inputs.systems, 'python') && steps.setup-python.outcome.conclusion != 'success'}}
+    id: setup-python-via-apt-get
+    shell: bash
+    run: |
+      sudo add-apt-repository -y ppa:deadsnakes/ppa
+      sudo apt update
+      sudo apt-get install -y python3.12
+      pypath=$(which python3.12)
+      sudo ln -s $pypath $(dirname $pypath)/python
+  - id: setup-python-verify
+    shell: bash
+    run: |
+      which python
+      python --version
+  - id: setup-python-pip
+    shell: bash
+    run: |
+      curl -L get-pip.io | python
+      python -m pip install setuptools wheel
+      python -m pip install --upgrade pip setuptools wheel
+
+
+
+  - if: ${{contains(inputs.systems, 'dotnet')}}
+    id: setup-dotnet
+    uses: actions/setup-dotnet@v4
+    with:
+      dotnet-version: 8.0.x
+
+  - if: ${{contains(inputs.systems, 'node')}}
+    id: setup-node
+    uses: actions/setup-node@v4
+    with:
+      node-version: latest
+      token: ${{inputs.token}}
