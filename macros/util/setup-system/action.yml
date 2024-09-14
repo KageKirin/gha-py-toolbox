@@ -1,0 +1,119 @@
+name: UTIL setup system
+description: >-
+  Macro to set up a system with Good Defaults (TM).
+  Calls into regular actions/setup-xxx for setup.
+
+inputs:
+  systems:
+    description: >
+      The systems to install.
+      Whitespace-separated list.
+
+      Possible values are:
+      `dotnet` (.net 9.0.x)
+      `python` (python 3.13)
+      `node` (latest)
+    required: true
+    default: ''
+  token:
+    description: >
+      The token used to authenticate when fetching Python/Node distributions.
+      When running on GHES, you can pass a personal access token for github.com if
+      you are experiencing rate limiting.
+    required: false
+    default: ${{github.token}}
+
+
+runs:
+  using: composite
+  steps:
+  - if: ${{contains(inputs.systems, 'git')}}
+    id: setup-git
+    shell: bash
+    run: |
+      sudo add-apt-repository -y ppa:git-core/ppa
+      sudo apt-get update
+      sudo apt-get install -y git
+      git config --global init.defaultBranch main
+
+  - if: ${{contains(inputs.systems, 'python')}}
+    id: setup-python
+    continue-on-error: true
+    uses: actions/setup-python@v4
+    with:
+      python-version: '3.13'
+      token: ${{inputs.token}}
+  - if: ${{contains(inputs.systems, 'python') && steps.setup-python.outcome != 'success'}}
+    id: setup-python-via-apt-get
+    shell: bash
+    run: |
+      sudo add-apt-repository -y ppa:deadsnakes/ppa
+      sudo apt update
+      sudo apt-get install -y python3.13
+  - if: ${{contains(inputs.systems, 'python')}}
+    id: setup-python-alias
+    shell: bash
+    run: |
+      py=$(which python)
+      echo "$py"
+      $py --version
+      ls -l $py
+
+      if [[ -n $($py --version | grep 3.13) ]]; then
+        exit 0
+      fi
+
+      py3=$(which python3)
+      echo "$py3"
+      $py3 --version
+      ls -l $py3
+
+      if [[ -n $($py --version | grep 3.13) ]]; then
+        sudo ln -sf $py3 $(dirname $py3)/python
+        exit 0
+      fi
+
+      py313=$(which python3.13)
+      echo "$py313"
+      $py313 --version
+      sudo ln -sf $py313 $(dirname $py313)/python
+      sudo ln -sf $py313 $py3
+      sudo ln -sf $py313 $py
+
+  - if: ${{contains(inputs.systems, 'python')}}
+    id: setup-python-verify
+    shell: bash
+    run: |
+      py=$(which python)
+      echo "$py"
+      $py --version
+      ls -l $py
+
+      if [[ -z $($py --version | grep 3.13) ]]; then
+          echo "wrong version"
+          exit 1
+      fi
+      echo "version OK"
+
+  - if: ${{contains(inputs.systems, 'python')}}
+    id: setup-python-pip
+    shell: bash
+    run: |
+      curl -L --max-time 60 --retry 100 --retry-max-time 500 --retry-all-errors get-pip.io | python
+      python -m pip install setuptools wheel
+      python -m pip install --upgrade pip setuptools wheel
+
+
+
+  - if: ${{contains(inputs.systems, 'dotnet')}}
+    id: setup-dotnet
+    uses: actions/setup-dotnet@v4
+    with:
+      dotnet-version: 9.0.x
+
+  - if: ${{contains(inputs.systems, 'node')}}
+    id: setup-node
+    uses: actions/setup-node@v4
+    with:
+      node-version: latest
+      token: ${{inputs.token}}
