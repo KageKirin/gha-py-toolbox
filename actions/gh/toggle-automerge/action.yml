@@ -1,0 +1,211 @@
+name: GH merge pullrequest
+description: >
+  Merges the given pull request.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:write" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+  pullrequest:
+    description: >
+      The pull request NUMBERS.
+      WARNING: the PR NUMBER is not the PR ID
+    required: true
+
+  toggle:
+    description: >
+      bool to control whether to enable or disable automerge on the pull request
+    required: true
+    default: true
+  author:
+    description: >
+      Email of the person to be held responsible for the merge.
+    required: true
+
+  title:
+    description: >
+      Pystache template for the commit title of the merge/squash commit resulting
+      from merging this pull request.
+      Defaults to the title of the pull request.
+
+      Available fields are:
+      - merge_method
+      - title, body, number, etc, i.e. all the fields exposed by the REST API
+        @see: https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
+    required: true
+    default: '{{title}}'
+  body:
+    description: >
+      Pystache template for the commit body for the merge/squash commit resulting
+      from merging this pull request.
+      Defaults to the body (1st message) of the pull request.
+
+      Available fields are:
+      - merge_method
+      - title, body, number, etc, i.e. all the fields exposed by the REST API
+        @see: https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
+    required: true
+    default: '{{body}}'
+
+  method:
+    description: >
+      Pull Request Merge Method
+
+      Represents available types of methods to use when merging a pull request.
+      MERGE: Add all commits from the head branch to the base branch with a merge
+      commit.
+      REBASE: Add all commits from the head branch onto the base branch individually.
+      SQUASH: Combine all commits from the head branch into a single commit in the
+      base branch.
+    type: choice
+    options:
+    - MERGE
+    - REBASE
+    - SQUASH
+    required: true
+
+  dry-run:
+    description: if true, do not perform actual merge
+    required: false
+    default: 'true'
+
+
+outputs:
+  status:
+    description: >
+      Merge status as returned by the automerge toggle.
+
+      ```json
+      {
+      }```
+    value: ${{fromJSON(steps.toggle-pullrequest-automerge.outputs.status)}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+        pystache
+
+  - id: toggle-pullrequest-automerge
+    name: Toggle pull request automerge
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+      inputs_pullrequest: ${{inputs.pullrequest}}
+      inputs_method: ${{inputs.method}}
+      inputs_title: ${{inputs.title}}
+      inputs_body: ${{inputs.body}}
+      inputs_author: ${{inputs.author}}
+      inputs_toggle: ${{inputs.toggle}}
+      inputs_dryrun: ${{inputs.dry-run}}
+    run: |
+      ## actions/gh/toggle-automerge/action.yml#toggle-pullrequest-automerge
+      import os, sys, re, json, pprint
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+      import pystache
+      import html
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      assert api_url is not None
+      repository = str(os.getenv("inputs_repository"))
+      assert repository is not None
+      pr_num = str(os.getenv("inputs_pullrequest"))
+      assert pr_num is not None
+      merge_method = str(os.getenv("inputs_method")).lower()
+      assert merge_method is not None
+
+      title_template = pystache.parse(str(os.getenv("inputs_title")))
+      assert title_template is not None
+      print(title_template)
+      body_template = pystache.parse(str(os.getenv("inputs_body")))
+      assert body_template is not None
+      print(body_template)
+
+      author = str(os.getenv("inputs_author"))
+      assert author is not None
+      toggle = str(os.getenv("inputs_toggle")).lower() == "true"
+      assert toggle is not None
+      dryrun = not (str(os.getenv("inputs_dryrun")).lower() == "false")
+      assert dryrun is not None
+
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      pr = repo.get_pull(number=int(pr_num))
+      assert pr is not None
+      print(pr)
+      data = pr.raw_data
+      data["merge_method"] = merge_method
+      print(data)
+
+      status = {
+          "actor": {
+              "login": author,
+          },
+          "clientMutationId": "0",
+          "pullRequest": {},
+      }
+
+      if toggle:
+          merge_title = html.unescape(pystache.render(title_template, data))
+          merge_body = html.unescape(pystache.render(body_template, data))
+
+          print("======================== TITLE ========================")
+          print(merge_title)
+          print("======================== BODY  ========================")
+          print(merge_body)
+          print("=======================================================")
+
+          if not dryrun:
+              status = pr.enable_automerge(
+                  merge_method=merge_method.upper(),
+                  author_email=author,
+                  mutation_id=str(uuid.uuid4()).replace("-", ""),
+                  commit_body=merge_body,
+                  commit_headline=merge_title,
+                  expected_head_oid=pr.head.sha,
+              )
+              status = status.raw_data
+
+      else:
+          status = {}
+
+          if not dryrun:
+              status = pr.disable_automerge(
+                  mutation_id=str(uuid.uuid4()).replace("-", "")
+              )
+              status = status.raw_data
+
+      status_json = json.dumps(json.dumps(status))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"status={status_json}")
+          print(f"status={status_json}", file=fh)
