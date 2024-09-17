@@ -1,0 +1,173 @@
+name: GH get pullrequest
+description: >
+  Retrieves a given pull request.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  number:
+    description: >
+      The pull request NUMBER, if known.
+      Allows to retrieve the PR without searching from its branch.
+
+      WARNING: the PR NUMBER is not the PR ID
+    required: false
+  branch:
+    description: >
+      The pull request BRANCH (aka head ref name).
+    required: false
+
+outputs:
+  number:
+    description: >
+      The pull request number.
+    value: foobar
+  id:
+    description: >
+      The pull request ID.
+    value: foobar
+  branch:
+    description: >
+      The pull request head ref name.
+    value: foobar
+  sha:
+    description: >
+      The branch's head Oid.
+    value: ${{steps.get-pullrequest.outputs.sha}}
+  base-branch:
+    description: >
+      The branch's base branch.
+    value: ${{steps.get-pullrequest.outputs.base_branch}}
+  base-sha:
+    description: >
+      The branch's base branch Oid, i.e. fork point.
+    value: ${{steps.get-pullrequest.outputs.base_sha}}
+  pullrequest:
+    description: >
+      The pull request's JSON data.
+    value: foobar
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: get-pullrequest
+    name: Get pull request
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+      inputs_pr_number: ${{inputs.number}}
+      inputs_pr_branch: ${{inputs.branch}}
+    run: |
+      ## actions/gh/get-pullrequest/action.yml#get-pullrequest
+      import os, sys, re, json, pprint
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+
+      pr_num = int(os.getenv("inputs_pr_number", -1))
+      pr_branch = str(os.getenv("inputs_pr_branch"))
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      pr_data = None
+
+      if pr_num > 0:
+          pr = repo.get_pull(number=int(pr_num))
+          assert pr is not None
+          pr_data = pr.raw_data
+      elif pr_branch is not None:
+          pulls = repo.get_pulls(
+              state="open",
+              sort="created",
+              base=base_ref if base_ref and len(base_ref) > 0 else NotSet,
+              head=f"{repo.owner}:{pr_branch}",
+          )
+          if pulls and len(pulls) > 0:
+              pr = pulls[0]
+      else:
+          raise RuntimeError("neither argument `number` nor `branch` provided")
+
+      if pr_data is None:
+          raise RuntimeError("unable to retrieve any pullrequest")
+
+      pullrequest_json = json.dumps(json.dumps(pr.raw_data))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"id={pr.id}")
+          print(f"id={pr.id}", file=fh)
+          print(f"number={pr.number}")
+          print(f"number={pr.number}", file=fh)
+          print(f"branch={pr.head.ref}")
+          print(f"branch={pr.head.ref}", file=fh)
+          print(f"sha={pr.head.sha}")
+          print(f"sha={pr.head.sha}", file=fh)
+          print(f"base_branch={pr.base.ref}")
+          print(f"base_branch={pr.base.ref}", file=fh)
+          print(f"base_sha={pr.base.sha}")
+          print(f"base_sha={pr.base.sha}", file=fh)
+          print(f"pullrequest={pullrequest_json}")
+          print(f"pullrequest={pullrequest_json}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/gh/get-pullrequest/action.yml#verify-outputs
+      steps.get-pullrequest.outputs.id
+      ${{steps.get-pullrequest.outputs.id}}
+
+      steps.get-pullrequest.outputs.number
+      ${{steps.get-pullrequest.outputs.number}}
+
+      steps.get-pullrequest.outputs.branch
+      ${{steps.get-pullrequest.outputs.branch}}
+
+      steps.get-pullrequest.outputs.sha
+      ${{steps.get-pullrequest.outputs.sha}}
+
+      steps.get-pullrequest.outputs.base_branch
+      ${{steps.get-pullrequest.outputs.base_branch}}
+
+      steps.get-pullrequest.outputs.base_sha
+      ${{steps.get-pullrequest.outputs.base_sha}}
+
+      steps.get-pullrequest.outputs.count
+      ${{steps.get-pullrequest.outputs.count}}
+
+      steps.get-pullrequest.outputs.pullrequest
+      ${{steps.get-pullrequest.outputs.pullrequest}}
+      ${{fromJSON(steps.get-pullrequest.outputs.pullrequest)}}
