@@ -1,0 +1,97 @@
+name: GH download file
+description: >
+  Downloads a file from a specified repository.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: true
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: true
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: true
+    default: ${{github.token}}
+  ref:
+    description: >
+      Git commit-ish (branch/tag/hash) where to find the file.
+      Empty string defaults to default branch.
+    required: false
+    default: ''
+  source-file:
+    description: >
+      Path to source file within repository.
+    required: true
+  target-file:
+    description: >
+      Path to target file within local file system.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+        requests
+
+  - id: download-file
+    name: Download file
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_ref: ${{inputs.ref}}
+      inputs_token: ${{inputs.token}}
+      inputs_source: ${{inputs.source-file}}
+      inputs_target: ${{inputs.target-file}}
+    run: |
+      ## actions/gh/download-file/action.yml#download-file
+      import os, sys, re, json, pprint, itertools, shutil, requests
+      from pathlib import Path
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+      ref = os.getenv("inputs_ref")
+      source = str(os.getenv("inputs_source"))
+      assert source is not None
+      target = str(os.getenv("inputs_target"))
+      assert target is not None
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      contents = repo.get_contents(path=source, ref=ref or NotSet)
+      pprint.pp(contents.raw_data)
+
+      headers = {}
+      if token != "":
+          headers["Authorization"] = f"Bearer {token}"
+
+      print(f"fetching '{contents.download_url}'")
+      with requests.get(contents.download_url, headers=headers, stream=True) as r:
+          if not r.ok:
+              print(
+                  f"failed to download '{contents.download_url}' with status {r.status_code} {r.reason}"
+              )
+          assert r.ok
+          if r.ok:
+              with Path(target).open("wb") as fh:
+                  for chunk in r.iter_content(chunk_size=128):
+                      fh.write(chunk)
