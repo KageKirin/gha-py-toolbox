@@ -1,0 +1,122 @@
+name: GH download published registry_package
+description: >
+  Downloads published registry package files.
+  This can only be called from a `on-registry_package[published]` job as below,
+  as it requires the data structure specific to `github.event.registry_package`.
+  Further, permissions must be set as below:
+
+  ```
+  on:
+    registry_package:
+      types: [published]
+
+  jobs:
+    upload:
+      permissions:
+        packages: read  #<-- access packages
+    runs-on: xxx-latest
+    steps:
+    - id: download-package
+      name: Download published package
+      uses: kagekirin/gha-py-toolbox/actions/gh/download-published-npm-package@main
+      with:
+        registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+        token: $ {{ github.token }}
+  ```
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry_package_json:
+    description: >
+      The github.event.registry_package structure as JSON:
+
+      ```
+      registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+      ```
+    required: true
+
+outputs:
+  packages:
+    description: >
+      Whitespace-separated list of the downloaded package files.
+    value: ${{steps.download-packages.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: print-json
+    name: Print JSON data
+    shell: python
+    run: |
+      ## actions/gh/download-published-package/action.yml#print-json
+      """
+      ${{inputs.registry_package_json}}
+      """
+
+  - id: download-packages
+    name: Download
+    shell: python
+    env:
+      inputs_registry_package_json: ${{inputs.registry_package_json}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/gh/download-published-package/action.yml#download-packages
+      import os, sys, shlex, json, pprint, requests, shutil
+      from urllib.parse import urlparse
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      assert token is not None
+
+      session = requests.Session()
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+      session.headers["Accept"] = "application/octet-stream"
+
+      registry_package = json.loads(os.getenv("inputs_registry_package_json"))
+      assert registry_package is not None
+      pprint.pp(registry_package)
+
+      ecosystem = registry_package["ecosystem"]
+      package_type = registry_package["package_type"]
+      package_name = registry_package["name"]
+      assert package_name is not None
+
+      package_version = registry_package["package_version"]["version"]
+      assert package_version is not None
+      assert package_version == registry_package["package_version"]["name"]
+
+      package_files = registry_package["package_version"]["package_files"]
+      assert package_files is not None
+
+      files = list()
+
+      for package_file in package_files:
+          name = package_file["name"]
+          download_url = package_file["download_url"]
+          assert urlparse(download_url) is not None
+          print(f"downloading {name} from {download_url}")
+          with session.get(download_url, stream=True) as r:
+              if r.ok:
+                  with Path(name).open("wb") as f:
+                      shutil.copyfileobj(r.raw, f)
+                  files.append(name)
+              else:
+                  print(f"failed to download {name} from {download_url}")
+                  print(f"reason {r.status_code}: {r.reason}")
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={' '.join(files)}")
+          print(f"packages={' '.join(files)}", file=fh)
