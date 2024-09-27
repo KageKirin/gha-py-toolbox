@@ -1,0 +1,158 @@
+name: GH download published NPM registry_package
+description: >
+  Downloads a published NPM registry package.
+  This can only be called from a `on-registry_package[published]` job as below,
+  as it requires the data structure specific to `github.event.registry_package`.
+  Further, permissions must be set as below:
+
+  ```
+  on:
+    registry_package:
+      types: [published]
+
+  jobs:
+    upload:
+      permissions:
+        packages: read  #<-- access packages
+    runs-on: xxx-latest
+    steps:
+    - id: download-package
+      name: Download published package
+      uses: kagekirin/gha-py-toolbox/actions/gh/download-published-npm-package@main
+      with:
+        registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+        token: $ {{ github.token }}
+  ```
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry_package_json:
+    description: >
+      The github.event.registry_package structure as JSON:
+
+      ```
+      registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+      ```
+    required: true
+
+outputs:
+  packages:
+    description: >
+      Filename of the downloaded package(s).
+    value: ${{steps.download-packages.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: print-json
+    name: Print JSON data
+    shell: python
+    run: |
+      ## actions/gh/download-published-npm-package/action.yml#print-json
+      """
+      ${{inputs.registry_package_json}}
+      """
+
+  - id: download-packages
+    name: Download
+    shell: python
+    env:
+      inputs_registry_package_json: ${{inputs.registry_package_json}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/gh/download-published-npm-package/action.yml#download-packages
+      import os, sys, json, pprint, requests, shutil, base64, hashlib
+      from urllib.parse import urlparse
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      assert token is not None
+
+      registry_package = json.loads(os.getenv("inputs_registry_package_json"))
+      assert registry_package is not None
+      pprint.pp(registry_package)
+
+      ecosystem = registry_package["ecosystem"]
+      print("ecosystem:", ecosystem)
+      assert ecosystem.lower() == "npm"
+
+      package_type = registry_package["package_type"]
+      print("package_type:", package_type)
+      assert package_type.lower() == "npm"
+
+      package_name = registry_package["name"]
+      print("package_name:", package_name)
+      assert package_name is not None
+
+      package_version = registry_package["package_version"]["version"]
+      print("package_version:", package_version)
+      assert package_version is not None
+      assert package_version == registry_package["package_version"]["name"]
+
+      package_manifest_str = registry_package["package_version"]["manifest"]
+
+      package_manifest = None
+      if package_manifest_str and len(package_manifest_str) > 0:
+          print("package_manifest_str:", package_manifest_str)
+          package_manifest = json.loads(package_manifest_str)
+      else:
+          package_manifest = registry_package["package_version"]["npm_metadata"]
+      assert package_manifest is not None
+
+      print("package_manifest:")
+      pprint.pp(package_manifest)
+
+      shasum = package_manifest["dist"]["shasum"]
+      tarball_url = package_manifest["dist"]["tarball"]
+      assert urlparse(tarball_url) is not None
+      assert tarball_url is not None
+      integrity = package_manifest["dist"]["integrity"]
+      packagefile = ""
+
+      headers = {"Authorization": f"Bearer {token}"}
+
+      print(f"downloading {Path(tarball_url).name} from {tarball_url}")
+      with requests.get(tarball_url, headers=headers, stream=True) as r:
+          if r.ok:
+              tarball_file = Path(Path(tarball_url).name)
+              with tarball_file.open("wb") as fh:
+                  for chunk in r.iter_content(chunk_size=128):
+                      fh.write(chunk)
+
+              tarball_bytes = tarball_file.read_bytes()
+              package_integrity = base64.b64encode(
+                  hashlib.sha512(tarball_bytes).digest()
+              ).decode("ascii")
+              package_shasum = hashlib.sha1(tarball_bytes).hexdigest()
+
+              print("package_integrity:", package_integrity)
+              print("   dist integrity:", integrity)
+              print("\tmatch: ", package_integrity == integrity)
+
+              print("package_shasum:", package_shasum)
+              print("   dist shasum:", shasum)
+              print("\tmatch: ", package_shasum == shasum)
+
+              # assert package_integrity == integrity
+              # assert package_shasum == shasum
+              packagefile = tarball_file.name
+          else:
+              print(f"failed to download {tarball_file.name} from {tarball_url}")
+              print(f"reason {r.status_code}: {r.reason}")
+
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={packagefile}")
+          print(f"packages={packagefile}", file=fh)
