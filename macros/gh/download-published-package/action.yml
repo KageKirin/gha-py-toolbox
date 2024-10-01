@@ -66,7 +66,7 @@ runs:
   - id: download-npm-package
     if: ${{fromJSON(registry_package_json).ecosystem == 'npm'}}
     name: Download published NPM package
-    uses: kagekirin/gha-py-toolbox/actions/gh/download-published-npm-package@main
+    uses: kagekirin/gha-py-toolbox/macros/gh/download-published-npm-package@main
     with:
       registry_package_json: ${{inputs.registry_package_json}}
       token: ${{inputs.token}}
