@@ -1,0 +1,57 @@
+name: GH MACRO download published NPM registry_package
+description: >
+  Downloads a published NPM registry package.
+  This can only be called from a `on-registry_package[published]` job as below,
+  as it requires the data structure specific to `github.event.registry_package`.
+  Further, permissions must be set as below:
+
+  ```
+  on:
+    registry_package:
+      types: [published]
+
+  jobs:
+    upload:
+      permissions:
+        packages: read  #<-- access packages
+    runs-on: xxx-latest
+    steps:
+    - id: download-package
+      name: Download published package
+      uses: kagekirin/gha-py-toolbox/actions/gh/download-published-npm-package@main
+      with:
+        registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+        token: $ {{ github.token }}
+  ```
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry_package_json:
+    description: >
+      The github.event.registry_package structure as JSON:
+
+      ```
+      registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+      ```
+    required: true
+
+outputs:
+  packages:
+    description: >
+      Filename of the downloaded package(s).
+    value: ${{steps.get-npm-package.outputs.packages}}
+
+runs:
+  using: composite
+  steps:
+  - id: get-npm-package
+    uses: kagekirin/gha-py-toolbox/actions/npm/get-package@main
+    with:
+      token: ${{inputs.token}}
+      registry: ${{fromJSON(inputs.registry_package_json).registry.url}}
+      package: ${{fromJSON(inputs.registry_package_json).name}}
+      version: ${{fromJSON(inputs.registry_package_json).package_version.name}}
