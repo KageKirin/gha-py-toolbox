@@ -1,0 +1,106 @@
+name: GH JOB release published packages
+description: >
+  Downloads published registry package files using the following actions and macros:
+  - action gh/download-published-nuget-package
+  - action gh/download-published-npm-package
+  - macro gh/download-published-package
+    calling in turn:
+    - macro gh/download-published-nuget-package
+      calling in turn:
+      - action nuget/get-package
+    - macro gh/download-published-npm-package
+      calling in turn:
+      - action npm/get-package
+
+  Uploads the downloaded packages (if any) to the release.
+
+  Returns a whitespace-separated list of the downloaded packages, i.e.
+  the result of joining the outputs from the aforementioned actions.
+
+  This can only be called from a `on-registry_package[published]` job as below,
+  as it requires the data structure specific to `github.event.registry_package`.
+  Further, permissions must be set as below:
+
+  ```
+  on:
+    registry_package:
+      types: [published]
+
+  jobs:
+    upload:
+      permissions:
+        packages: read  #<-- access packages
+    runs-on: xxx-latest
+    steps:
+    - id: download-generic-package
+      name: Download published package
+      uses: kagekirin/gha-py-toolbox/jobs/gh/release-published-packages@main
+      with:
+        registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+        token: $ {{ github.token }}
+  ```
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" and "contents:write" permissions
+      for the given repository.
+    required: true
+    default: ${{github.token}}
+  registry_package_json:
+    description: >
+      The github.event.registry_package structure as JSON string:
+
+      ```
+      registry_package_json: $ {{ toJSON(github.event.registry_package) }}
+      ```
+    required: true
+
+outputs:
+  packages:
+    description: >
+      Whitespace-separated list of the downloaded package files.
+    value: ${{format('{0} {1} {2}', steps.download-nuget-package.outputs.packages, steps.download-npm-package.outputs.packages, steps.download-generic-package.outputs.packages)}}
+
+runs:
+  using: composite
+  steps:
+  - name: Show infos about event
+    uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+    with:
+      object: ${{inputs.registry_package_json}}
+
+  - id: download-nuget-package
+    if: ${{fromJSON(inputs.registry_package_json).ecosystem == 'nuget'}}
+    name: Download published NuGet package
+    uses: kagekirin/gha-py-toolbox/actions/gh/download-published-nuget-package@main
+    with:
+      registry_package_json: ${{inputs.registry_package_json}}
+      token: ${{inputs.token}}
+
+  - id: download-npm-package
+    if: ${{fromJSON(inputs.registry_package_json).ecosystem == 'npm'}}
+    name: Download published NPM package
+    uses: kagekirin/gha-py-toolbox/actions/gh/download-published-npm-package@main
+    with:
+      registry_package_json: ${{inputs.registry_package_json}}
+      token: ${{inputs.token}}
+
+  - id: download-generic-package
+    if: ${{format('{0}{1}', steps.download-nuget-package.outputs.packages, steps.download-npm-package.outputs.packages) == ''}}
+    name: Download published generic package files
+    uses: kagekirin/gha-py-toolbox/macros/gh/download-published-package@main
+    with:
+      registry_package_json: ${{inputs.registry_package_json}}
+      token: ${{inputs.token}}
+
+  - id: upload-package
+    name: Upload published package files
+    uses: kagekirin/gha-py-toolbox/actions/gh/upload-release-assets@main
+    with:
+      token: ${{inputs.token}}
+      tag: v${{fromJSON(inputs.registry_package_json).package_version.name }}
+      files: |
+        ${{ steps.download-nuget-package.outputs.packages }}
+        ${{ steps.download-npm-package.outputs.packages }}
+        ${{ steps.download-generic-package.outputs.packages }}
