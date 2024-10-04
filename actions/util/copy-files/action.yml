@@ -1,0 +1,46 @@
+name: UTIL Copy files
+description: >
+  Copy files from path/ to target_path/
+
+inputs:
+  path:
+    description: base path from where to run the action
+    required: true
+    default: ${{github.workspace}}
+  target-path:
+    description: base path to copy files to
+    required: true
+  files:
+    description: >
+      Whitespace-separated list of files to copy.
+      Files must be relative to inputs.path.
+    required: true
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: copy-files
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_target_path: ${{inputs.target-path}}
+      inputs_files: ${{inputs.files}}
+    run: |
+      ## actions/util/copy-files/action.yml#copy-files
+      import os, shutil
+      from contextlib import chdir
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      target_path = Path(os.getenv("inputs_target_path", ""))
+      files = str(os.getenv("inputs_files", "")).split()
+
+      with chdir(os.getenv("inputs_path", ".")):
+          for src in [Path(f) for f in files]:
+              dst = target_path.joinpath(src)
+              dst.parent.mkdir(parents=True, exist_ok=True)
+              print(f"copying {src} -> {dst}")
+              assert src.exists() and src.is_file()
+              shutil.copyfile(src, dst)
