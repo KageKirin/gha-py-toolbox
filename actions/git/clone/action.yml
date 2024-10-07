@@ -1,0 +1,857 @@
+name: GIT CLONE
+description: >
+  Regular git clone using the git CLI.
+
+inputs:
+  # actions/checkout compatible
+  repository:
+    description: Repository name with owner. For example, actions/checkout
+    default: ${{github.repository}}
+  ref:
+    description: >
+      The branch, tag or SHA to checkout. When checking out the repository that
+      triggered a workflow, this defaults to the reference or SHA for that
+      event.  Otherwise, uses the default branch.
+    required: false
+    default: ${{github.ref_name}}
+  token:
+    description: >
+      Personal access token (PAT) used to fetch the repository. The PAT is configured
+      with the local git config, which enables your scripts to run authenticated git
+      commands. The post-job step removes the PAT.
+
+
+      We recommend using a service account with the least permissions necessary.
+      Also when generating a new PAT, select the least scopes necessary.
+
+
+      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+    default: ${{github.token}}
+  ssh-key:
+    description: >
+      SSH key used to fetch the repository. The SSH key is configured with the local
+      git config, which enables your scripts to run authenticated git commands.
+      The post-job step removes the SSH key.
+
+
+      We recommend using a service account with the least permissions necessary.
+
+
+      [Learn more about creating and using
+      encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+  ssh-known-hosts:
+    description: >
+      Known hosts in addition to the user and global host key database. The public
+      SSH keys for a host may be obtained using the utility `ssh-keyscan`. For example,
+      `ssh-keyscan github.com`. The public key for github.com is always implicitly
+      added.
+  ssh-strict:
+    description: >
+      Whether to perform strict host key checking. When true, adds the options `StrictHostKeyChecking=yes`
+      and `CheckHostIP=no` to the SSH command line. Use the input `ssh-known-hosts`
+      to
+      configure additional hosts.
+    default: true
+  ssh-user:
+    description: >
+      The user to use when connecting to the remote SSH host. By default 'git' is
+      used.
+    default: git
+  persist-credentials:
+    description: Whether to configure the token or SSH key with the local git config
+    default: true
+  path:
+    description: Relative path under $GITHUB_WORKSPACE to place the repository
+  clean:
+    description: Whether to execute `git clean -ffdx && git reset --hard HEAD` before fetching
+    default: true
+  filter:
+    description: >
+      Partially clone against a given filter.
+      Overrides sparse-checkout if set.
+    default:
+  sparse-checkout:
+    description: >
+      Do a sparse checkout on given patterns.
+      Each pattern should be separated with new lines.
+    default:
+  sparse-checkout-cone-mode:
+    description: >
+      Specifies whether to use cone-mode when doing a sparse checkout.
+    default: true
+  fetch-depth:
+    description: Number of commits to fetch. 0 indicates all history for all branches and tags.
+    default: 1
+  fetch-tags:
+    description: Whether to fetch tags, even if fetch-depth > 0.
+    default: false
+  show-progress:
+    description: Whether to show progress status output when fetching.
+    default: true
+  lfs:
+    description: Whether to download Git-LFS files
+    default: false
+  submodules:
+    description: >
+      Whether to checkout submodules: `true` to checkout submodules or `recursive`
+      to
+      recursively checkout submodules.
+
+
+      When the `ssh-key` input is not provided, SSH URLs beginning with `git@github.com:`
+      are
+      converted to HTTPS.
+    default: false
+  set-safe-directory:
+    description: Add repository path as safe.directory for Git global config by running `git config --global --add safe.directory <path>`
+    default: true
+  github-server-url:
+    description: The base URL for the GitHub instance that you are trying to clone from, will use environment defaults to fetch from the same instance that the workflow is running from unless specified. Example URLs are https://github.com or https://my-ghes-server.example.com
+    required: true
+    default: ${{github.server_url}}
+
+
+outputs:
+  ref:
+    description: The branch, tag or SHA that was checked out
+    value: ${{steps.checkout-state.outputs.ref}}
+  commit:
+    description: The commit SHA that was checked out
+    value: ${{steps.checkout-state.outputs.commit}}
+
+runs:
+  using: composite
+  steps:
+
+  - id: repo-url
+    uses: kagekirin/gha-py-toolbox/actions/git/prepare-repo-url@main
+    with:
+      repository: ${{inputs.repository}}
+      ssh-user: ${{inputs.ssh-user}}
+      github-server-url: ${{inputs.github-server-url}}
+
+
+  - id: configure-token
+    if: ${{inputs.token != ''}}
+    uses: kagekirin/gha-py-toolbox/actions/git/config-token@main
+    with:
+      repository: ${{steps.repo-url.outputs.repository-url}}
+      token: ${{inputs.token}}
+
+  - id: configure-ssh-key
+    if: ${{inputs.ssh-key != ''}}
+    uses: kagekirin/gha-py-toolbox/actions/git/config-ssh@main
+    with:
+      repository: ${{steps.repo-url.outputs.repository-url}}
+      ssh-key: ${{inputs.ssh-key}}
+      ssh-strict: ${{inputs.ssh-strict}}
+      ssh-known-hosts: ${{inputs.ssh-known-hosts}}
+      persist-credentials: ${{inputs.persist-credentials}}
+
+  - id: clean
+    shell: python
+    env:
+      inputs_clean: ${{inputs.clean}}
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/git/clone/action.yml#clean
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_clean = os.getenv("inputs_clean") == "true"
+      inputs_path = Path(os.getenv("inputs_path"))
+      assert inputs_path is not None
+
+      if inputs_path.exists():
+          if inputs_clean:
+              inputs.path.unlink()
+
+
+  - id: lfs-install
+    if: ${{fromJSON(inputs.lfs)}}
+    shell: python
+    run: |
+      ## actions/git/clone/action.yml#lfs-install
+      import os
+
+      err = os.waitstatus_to_exitcode(os.system("git lfs install"))
+      exit(err)
+
+  - id: checkout
+    shell: python
+    env:
+      inputs_repository: ${{steps.repo-url.outputs.repository-url}}
+      inputs_ref: ${{inputs.ref}}
+      inputs_path: ${{inputs.path}}
+      inputs_filter: ${{inputs.filter}}
+      inputs_sparse_checkout: ${{inputs.sparse-checkout}}
+      inputs_sparse_checkout_cone_mode: ${{inputs.sparse-checkout-cone-mode}}
+      inputs_fetch_depth: ${{inputs.fetch-depth}}
+      inputs_fetch_tags: ${{inputs.fetch-tags}}
+      inputs_show_progress: ${{inputs.show-progress}}
+      inputs_lfs: ${{inputs.lfs}}
+      inputs_submodules: ${{inputs.submodules}}
+      inputs_set_safe_directory: ${{inputs.set-safe-directory}}
+    run: |
+      ## actions/git/clone/action.yml#checkout
+      import os, sys
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_repository = str(os.getenv("inputs_repository", ""))
+      assert inputs_repository is not None
+
+      inputs_ref = str(os.getenv("inputs_ref", ""))
+      inputs_persist_credentials = (
+          os.getenv("inputs_persist_credentials", "true") == "true"
+      )
+      inputs_path = Path(os.getenv("inputs_path", "."))
+      assert inputs_path is not None
+
+      inputs_fetch_depth = str(os.getenv("inputs_fetch_depth", "1"))
+      inputs_fetch_tags = os.getenv("inputs_fetch_tags", "true") == "true"
+      inputs_filter = str(os.getenv("inputs_filter", "")).split()
+
+      inputs_clean = os.getenv("inputs_clean", "true") == "true"
+      inputs_sparse_checkout = str(os.getenv("inputs_sparse_checkout", "")).split()
+      inputs_sparse_checkout_cone_mode = (
+          os.getenv("inputs_sparse_checkout_cone_mode", "true") == "true"
+      )
+      inputs_show_progress = os.getenv("inputs_show_progress", "true") == "true"
+      inputs_lfs = os.getenv("inputs_lfs", "false") == "true"
+      inputs_submodules = os.getenv("inputs_submodules", "false") == "true"
+      inputs_set_safe_directory = (
+          os.getenv("inputs_set_safe_directory", "false") == "true"
+      )
+
+      repo_dir = [inputs_repository, str(inputs_path)]
+
+      options = list()
+      options.extend(["--no-checkout"])
+      options.extend(["--single-branch"])
+      options.extend(["--depth", inputs_fetch_depth])
+
+      if inputs_fetch_tags:
+          options.extend(["--tags"])
+      else:
+          options.extend(["--no-tags"])
+
+      if inputs_ref:
+          options.extend(["--branch", inputs_ref])
+
+      if inputs_show_progress:
+          options.extend(["--verbose"])
+          options.extend(["--progress"])
+
+      if inputs_submodules:
+          options.extend(["--recursive"])
+          options.extend(["--jobs", "4"])
+
+      for f in inputs_filter:
+          options.extend([f"--filter={f}"])
+
+      if inputs_sparse_checkout and len(inputs_sparse_checkout) > 0:
+          options.extend([f"--sparse"])
+
+      cmd = f"git clone {' '.join(options)} -- {' '.join(repo_dir)}"
+      print(cmd)
+      err = os.waitstatus_to_exitcode(os.system(cmd))
+      print("err:", err)
+      assert err == 0
+
+      if inputs_sparse_checkout and len(inputs_sparse_checkout) > 0:
+          conemode = "--cone" if inputs_sparse_checkout_cone_mode else "--no-cone"
+          cmd = f"git -C {inputs_path} sparse-checkout set {conemode} {' '.join(inputs_sparse_checkout)}"
+          print(cmd)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          print("err:", err)
+          assert err == 0
+
+      cmd = f"git -C {inputs_path} checkout {inputs_ref}"
+      print(cmd)
+      err = os.waitstatus_to_exitcode(os.system(cmd))
+      print("err:", err)
+      assert err == 0
+
+      if inputs_lfs:
+          cmd = f"git -C {inputs_path} lfs checkout"
+          print(cmd)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          print("err:", err)
+          assert err == 0
+
+  - id: checkout-state
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/git/clone/action.yml#checkout-state
+      import os, subprocess
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = Path(os.getenv("inputs_path", "."))
+      assert inputs_path is not None
+      assert inputs_path.is_dir()
+
+      ref = subprocess.check_output(
+          f"git -C {inputs_path} symbolic-ref --short HEAD".split()
+      ).decode()
+      commit = subprocess.check_output(
+          f"git -C {inputs_path} rev-parse --short HEAD".split()
+      ).decode()
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"ref={ref}")
+          print(f"ref={ref}", file=fh)
+          print(f"commit={commit}")
+          print(f"commit={commit}", file=fh)
+
+  - id: set-safe-directory
+    uses: kagekirin/gha-py-toolbox/actions/git/config-safe-dir@main
+    with:
+      path: ${{inputs.path}}
+
+  - id: cat-documentation
+    shell: cat {0}
+    run: |
+      ## actions/git/clone/action.yml#cat-documentation
+      usage: git clone [<options>] [--] <repo> [<dir>]
+
+          -v, --[no-]verbose    be more verbose
+          -q, --[no-]quiet      be more quiet
+          --[no-]progress       force progress reporting
+          --[no-]reject-shallow don't clone shallow repository
+          -n, --no-checkout     don't create a checkout
+          --checkout            opposite of --no-checkout
+          --[no-]bare           create a bare repository
+          --[no-]mirror         create a mirror repository (implies --bare)
+          -l, --[no-]local      to clone from a local repository
+          --no-hardlinks        don't use local hardlinks, always copy
+          --hardlinks           opposite of --no-hardlinks
+          -s, --[no-]shared     setup as shared repository
+          --[no-]recurse-submodules[=<pathspec>]
+                                initialize submodules in the clone
+          --[no-]recursive ...  alias of --recurse-submodules
+          -j, --[no-]jobs <n>   number of submodules cloned in parallel
+          --[no-]template <template-directory>
+                                directory from which templates will be used
+          --[no-]reference <repo>
+                                reference repository
+          --[no-]reference-if-able <repo>
+                                reference repository
+          --[no-]dissociate     use --reference only while cloning
+          -o, --[no-]origin <name>
+                                use <name> instead of 'origin' to track upstream
+          -b, --[no-]branch <branch>
+                                checkout <branch> instead of the remote's HEAD
+          -u, --[no-]upload-pack <path>
+                                path to git-upload-pack on the remote
+          --[no-]depth <depth>  create a shallow clone of that depth
+          --[no-]shallow-since <time>
+                                create a shallow clone since a specific time
+          --[no-]shallow-exclude <revision>
+                                deepen history of shallow clone, excluding rev
+          --[no-]single-branch  clone only one branch, HEAD or --branch
+          --no-tags             don't clone any tags, and make later fetches not to follow them
+          --tags                opposite of --no-tags
+          --[no-]shallow-submodules
+                                any cloned submodules will be shallow
+          --[no-]separate-git-dir <gitdir>
+                                separate git dir from working tree
+          --[no-]ref-format <format>
+                                specify the reference format to use
+          -c, --[no-]config <key=value>
+                                set config inside the new repository
+          --[no-]server-option <server-specific>
+                                option to transmit
+          -4, --ipv4            use IPv4 addresses only
+          -6, --ipv6            use IPv6 addresses only
+          --[no-]filter <args>  object filtering
+          --[no-]also-filter-submodules
+                                apply partial clone filters to submodules
+          --[no-]remote-submodules
+                                any cloned submodules will use their remote-tracking branch
+          --[no-]sparse         initialize sparse-checkout file to include only files at root
+          --[no-]bundle-uri <uri>
+                                a URI for downloading bundles before fetching from origin remote
+
+      GIT-CLONE(1)                      Git Manual                      GIT-CLONE(1)
+
+      NAME
+            git-clone - Clone a repository into a new directory
+
+      SYNOPSIS
+            git clone [--template=____________________]
+                      [-l] [-s] [--no-hardlinks] [-q] [-n] [--bare] [--mirror]
+                      [-o ______] [-b ______] [-u _____________] [--reference ____________]
+                      [--dissociate] [--separate-git-dir _________]
+                      [--depth _______] [--[no-]single-branch] [--no-tags]
+                      [--recurse-submodules[=__________]] [--[no-]shallow-submodules]
+                      [--[no-]remote-submodules] [--jobs ___] [--sparse] [--[no-]reject-shallow]
+                      [--filter=_____________] [--also-filter-submodules]] [--] ____________
+                      [___________]
+
+
+      DESCRIPTION
+            Clones a repository into a newly created directory, creates
+            remote-tracking branches for each branch in the cloned repository
+            (visible using git branch --remotes), and creates and checks out an
+            initial branch that is forked from the cloned repository's currently
+            active branch.
+
+            After the clone, a plain git fetch without arguments will update all
+            the remote-tracking branches, and a git pull without arguments will in
+            addition merge the remote master branch into the current master branch,
+            if any (this is untrue when --single-branch is given; see below).
+
+            This default configuration is achieved by creating references to the
+            remote branch heads under refs/remotes/origin and by initializing
+            remote.origin.url and remote.origin.fetch configuration variables.
+
+      OPTIONS
+            -l, --local
+                When the repository to clone from is on a local machine, this flag
+                bypasses the normal "Git aware" transport mechanism and clones the
+                repository by making a copy of HEAD and everything under objects
+                and refs directories. The files under .git/objects/ directory are
+                hardlinked to save space when possible.
+
+                If the repository is specified as a local path (e.g.,
+                /path/to/repo), this is the default, and --local is essentially a
+                no-op. If the repository is specified as a URL, then this flag is
+                ignored (and we never use the local optimizations). Specifying
+                --no-local will override the default when /path/to/repo is given,
+                using the regular Git transport instead.
+
+                If the repository's $GIT_DIR/objects has symbolic links or is a
+                symbolic link, the clone will fail. This is a security measure to
+                prevent the unintentional copying of files by dereferencing the
+                symbolic links.
+
+                NOTE: this operation can race with concurrent modification to the
+                source repository, similar to running cp -r src dst while modifying
+                src.
+
+            --no-hardlinks
+                Force the cloning process from a repository on a local filesystem
+                to copy the files under the .git/objects directory instead of using
+                hardlinks. This may be desirable if you are trying to make a
+                back-up of your repository.
+
+            -s, --shared
+                When the repository to clone is on the local machine, instead of
+                using hard links, automatically setup .git/objects/info/alternates
+                to share the objects with the source repository. The resulting
+                repository starts out without any object of its own.
+
+                NOTE: this is a possibly dangerous operation; do not use it unless
+                you understand what it does. If you clone your repository using
+                this option and then delete branches (or use any other Git command
+                that makes any existing commit unreferenced) in the source
+                repository, some objects may become unreferenced (or dangling).
+                These objects may be removed by normal Git operations (such as git
+                commit) which automatically call git maintenance run --auto. (See
+                git-maintenance(1).) If these objects are removed and were
+                referenced by the cloned repository, then the cloned repository
+                will become corrupt.
+
+                Note that running git repack without the --local option in a
+                repository cloned with --shared will copy objects from the source
+                repository into a pack in the cloned repository, removing the disk
+                space savings of clone --shared. It is safe, however, to run git
+                gc, which uses the --local option by default.
+
+                If you want to break the dependency of a repository cloned with
+                --shared on its source repository, you can simply run git repack -a
+                to copy all objects from the source repository into a pack in the
+                cloned repository.
+
+            --reference[-if-able] ____________
+                If the reference ____________ is on the local machine,
+                automatically setup .git/objects/info/alternates to obtain objects
+                from the reference ____________. Using an already existing
+                repository as an alternate will require fewer objects to be copied
+                from the repository being cloned, reducing network and local
+                storage costs. When using the --reference-if-able, a non existing
+                directory is skipped with a warning instead of aborting the clone.
+
+                NOTE: see the NOTE for the --shared option, and also the
+                --dissociate option.
+
+            --dissociate
+                Borrow the objects from reference repositories specified with the
+                --reference options only to reduce network transfer, and stop
+                borrowing from them after a clone is made by making necessary local
+                copies of borrowed objects. This option can also be used when
+                cloning locally from a repository that already borrows objects from
+                another repository--the new repository will borrow objects from the
+                same repository, and this option can be used to stop the borrowing.
+
+            -q, --quiet
+                Operate quietly. Progress is not reported to the standard error
+                stream.
+
+            -v, --verbose
+                Run verbosely. Does not affect the reporting of progress status to
+                the standard error stream.
+
+            --progress
+                Progress status is reported on the standard error stream by default
+                when it is attached to a terminal, unless --quiet is specified.
+                This flag forces progress status even if the standard error stream
+                is not directed to a terminal.
+
+            --server-option=________
+                Transmit the given string to the server when communicating using
+                protocol version 2. The given string must not contain a NUL or LF
+                character. The server's handling of server options, including
+                unknown ones, is server-specific. When multiple
+                --server-option=________ are given, they are all sent to the other
+                side in the order listed on the command line.
+
+            -n, --no-checkout
+                No checkout of HEAD is performed after the clone is complete.
+
+            --[no-]reject-shallow
+                Fail if the source repository is a shallow repository. The
+                clone.rejectShallow configuration variable can be used to specify
+                the default.
+
+            --bare
+                Make a ____ Git repository. That is, instead of creating
+                ___________ and placing the administrative files in
+                ___________/.git, make the ___________ itself the $GIT_DIR. This
+                obviously implies the --no-checkout because there is nowhere to
+                check out the working tree. Also the branch heads at the remote are
+                copied directly to corresponding local branch heads, without
+                mapping them to refs/remotes/origin/. When this option is used,
+                neither remote-tracking branches nor the related configuration
+                variables are created.
+
+            --sparse
+                Employ a sparse-checkout, with only files in the toplevel directory
+                initially being present. The git-sparse-checkout(1) command can be
+                used to grow the working directory as needed.
+
+            --filter=_____________
+                Use the partial clone feature and request that the server sends a
+                subset of reachable objects according to a given object filter.
+                When using --filter, the supplied _____________ is used for the
+                partial clone filter. For example, --filter=blob:none will filter
+                out all blobs (file contents) until needed by Git. Also,
+                --filter=blob:limit=______ will filter out all blobs of size at
+                least ______. For more details on filter specifications, see the
+                --filter option in git-rev-list(1).
+
+            --also-filter-submodules
+                Also apply the partial clone filter to any submodules in the
+                repository. Requires --filter and --recurse-submodules. This can be
+                turned on by default by setting the clone.filterSubmodules config
+                option.
+
+            --mirror
+                Set up a mirror of the source repository. This implies --bare.
+                Compared to --bare, --mirror not only maps local branches of the
+                source to local branches of the target, it maps all refs (including
+                remote-tracking branches, notes etc.) and sets up a refspec
+                configuration such that all these refs are overwritten by a git
+                remote update in the target repository.
+
+            -o ______, --origin ______
+                Instead of using the remote name origin to keep track of the
+                upstream repository, use ______. Overrides clone.defaultRemoteName
+                from the config.
+
+            -b ______, --branch ______
+                Instead of pointing the newly created HEAD to the branch pointed to
+                by the cloned repository's HEAD, point to ______ branch instead. In
+                a non-bare repository, this is the branch that will be checked out.
+                --branch can also take tags and detaches the HEAD at that commit in
+                the resulting repository.
+
+            -u _____________, --upload-pack _____________
+                When given, and the repository to clone from is accessed via ssh,
+                this specifies a non-default path for the command run on the other
+                end.
+
+            --template=____________________
+                Specify the directory from which templates will be used; (See the
+                "TEMPLATE DIRECTORY" section of git-init(1).)
+
+            -c _____=_______, --config _____=_______
+                Set a configuration variable in the newly-created repository; this
+                takes effect immediately after the repository is initialized, but
+                before the remote history is fetched or any files checked out. The
+                _____ is in the same format as expected by git-config(1) (e.g.,
+                core.eol=true). If multiple values are given for the same key, each
+                value will be written to the config file. This makes it safe, for
+                example, to add additional fetch refspecs to the origin remote.
+
+                Due to limitations of the current implementation, some
+                configuration variables do not take effect until after the initial
+                fetch and checkout. Configuration variables known to not take
+                effect are: remote.______.mirror and remote.______.tagOpt. Use the
+                corresponding --mirror and --no-tags options instead.
+
+            --depth _______
+                Create a _______ clone with a history truncated to the specified
+                number of commits. Implies --single-branch unless
+                --no-single-branch is given to fetch the histories near the tips of
+                all branches. If you want to clone submodules shallowly, also pass
+                --shallow-submodules.
+
+            --shallow-since=______
+                Create a shallow clone with a history after the specified time.
+
+            --shallow-exclude=__________
+                Create a shallow clone with a history, excluding commits reachable
+                from a specified remote branch or tag. This option can be specified
+                multiple times.
+
+            --[no-]single-branch
+                Clone only the history leading to the tip of a single branch,
+                either specified by the --branch option or the primary branch
+                remote's HEAD points at. Further fetches into the resulting
+                repository will only update the remote-tracking branch for the
+                branch this option was used for the initial cloning. If the HEAD at
+                the remote did not point at any branch when --single-branch clone
+                was made, no remote-tracking branch is created.
+
+            --no-tags
+                Don't clone any tags, and set remote.<remote>.tagOpt=--no-tags in
+                the config, ensuring that future git pull and git fetch operations
+                won't follow any tags. Subsequent explicit tag fetches will still
+                work, (see git-fetch(1)).
+
+                Can be used in conjunction with --single-branch to clone and
+                maintain a branch with no references other than a single cloned
+                branch. This is useful e.g. to maintain minimal clones of the
+                default branch of some repository for search indexing.
+
+            --recurse-submodules[=__________]
+                After the clone is created, initialize and clone submodules within
+                based on the provided __________. If no ___________ is provided,
+                all submodules are initialized and cloned. This option can be given
+                multiple times for pathspecs consisting of multiple entries. The
+                resulting clone has submodule.active set to the provided pathspec,
+                or "." (meaning all submodules) if no pathspec is provided.
+
+                Submodules are initialized and cloned using their default settings.
+                This is equivalent to running git submodule update --init
+                --recursive <pathspec> immediately after the clone is finished.
+                This option is ignored if the cloned repository does not have a
+                worktree/checkout (i.e. if any of --no-checkout/-n, --bare, or
+                --mirror is given)
+
+            --[no-]shallow-submodules
+                All submodules which are cloned will be shallow with a depth of 1.
+
+            --[no-]remote-submodules
+                All submodules which are cloned will use the status of the
+                submodule's remote-tracking branch to update the submodule, rather
+                than the superproject's recorded SHA-1. Equivalent to passing
+                --remote to git submodule update.
+
+            --separate-git-dir=_________
+                Instead of placing the cloned repository where it is supposed to
+                be, place the cloned repository at the specified directory, then
+                make a filesystem-agnostic Git symbolic link to there. The result
+                is Git repository can be separated from working tree.
+
+            --ref-format=____________
+                Specify the given ref storage format for the repository. The valid
+                values are:
+
+                +   files for loose files with packed-refs. This is the default.
+
+                +   reftable for the reftable format. This format is experimental
+                    and its internals are subject to change.
+
+            -j ___, --jobs ___
+                The number of submodules fetched at the same time. Defaults to the
+                submodule.fetchJobs option.
+
+            ____________
+                The (possibly remote) ____________ to clone from. See the GIT URLS
+                section below for more information on specifying repositories.
+
+            ___________
+                The name of a new directory to clone into. The "humanish" part of
+                the source repository is used if no ___________ is explicitly given
+                (repo for /path/to/repo.git and foo for host.xz:foo/.git). Cloning
+                into an existing directory is only allowed if the directory is
+                empty.
+
+            --bundle-uri=_____
+                Before fetching from the remote, fetch a bundle from the given
+                _____ and unbundle the data into the local repository. The refs in
+                the bundle will be stored under the hidden refs/bundle/* namespace.
+                This option is incompatible with --depth, --shallow-since, and
+                --shallow-exclude.
+
+      GIT URLS
+            In general, URLs contain information about the transport protocol, the
+            address of the remote server, and the path to the repository. Depending
+            on the transport protocol, some of this information may be absent.
+
+            Git supports ssh, git, http, and https protocols (in addition, ftp and
+            ftps can be used for fetching, but this is inefficient and deprecated;
+            do not use them).
+
+            The native transport (i.e. git:// URL) does no authentication and
+            should be used with caution on unsecured networks.
+
+            The following syntaxes may be used with them:
+
+            +   ssh://[______@]______[:______]/__________________
+
+            +   git://______[:______]/__________________
+
+            +   http[s]://______[:______]/__________________
+
+            +   ftp[s]://______[:______]/__________________
+
+            An alternative scp-like syntax may also be used with the ssh protocol:
+
+            +   [______@]______:/__________________
+
+            This syntax is only recognized if there are no slashes before the first
+            colon. This helps differentiate a local path that contains a colon. For
+            example the local path foo:bar could be specified as an absolute path
+            or ./foo:bar to avoid being misinterpreted as an ssh url.
+
+            The ssh and git protocols additionally support ~__________ expansion:
+
+            +   ssh://[______@]______[:______]/~______/__________________
+
+            +   git://______[:______]/~______/__________________
+
+            +   [______@]______:~______/__________________
+
+            For local repositories, also supported by Git natively, the following
+            syntaxes may be used:
+
+            +   /path/to/repo.git/
+
+            +   file:///path/to/repo.git/
+
+            These two syntaxes are mostly equivalent, except the former implies
+            --local option.
+
+            git clone, git fetch and git pull, but not git push, will also accept a
+            suitable bundle file. See git-bundle(1).
+
+            When Git doesn't know how to handle a certain transport protocol, it
+            attempts to use the remote-___________ remote helper, if one exists. To
+            explicitly request a remote helper, the following syntax may be used:
+
+            +   ___________::_________
+
+            where _________ may be a path, a server and path, or an arbitrary
+            URL-like string recognized by the specific remote helper being invoked.
+            See gitremote-helpers(7) for details.
+
+            If there are a large number of similarly-named remote repositories and
+            you want to use a different format for them (such that the URLs you use
+            will be rewritten into URLs that work), you can create a configuration
+            section of the form:
+
+                        [url "_________________"]
+                                insteadOf = ________________
+
+
+            For example, with this:
+
+                        [url "git://git.host.xz/"]
+                                insteadOf = host.xz:/path/to/
+                                insteadOf = work:
+
+
+            a URL like "work:repo.git" or like "host.xz:/path/to/repo.git" will be
+            rewritten in any context that takes a URL to be
+            "git://git.host.xz/repo.git".
+
+            If you want to rewrite URLs for push only, you can create a
+            configuration section of the form:
+
+                        [url "_________________"]
+                                pushInsteadOf = ________________
+
+
+            For example, with this:
+
+                        [url "ssh://example.org/"]
+                                pushInsteadOf = git://example.org/
+
+
+            a URL like "git://example.org/path/to/repo.git" will be rewritten to
+            "ssh://example.org/path/to/repo.git" for pushes, but pulls will still
+            use the original URL.
+
+      EXAMPLES
+            +   Clone from upstream:
+
+                    $ git clone git://git.kernel.org/pub/scm/.../linux.git my-linux
+                    $ cd my-linux
+                    $ make
+
+
+            +   Make a local clone that borrows from the current directory, without
+                checking things out:
+
+                    $ git clone -l -s -n . ../copy
+                    $ cd ../copy
+                    $ git show-branch
+
+
+            +   Clone from upstream while borrowing from an existing local
+                directory:
+
+                    $ git clone --reference /git/linux.git \
+                            git://git.kernel.org/pub/scm/.../linux.git \
+                            my-linux
+                    $ cd my-linux
+
+
+            +   Create a bare repository to publish your changes to the public:
+
+                    $ git clone --bare -l /home/proj/.git /pub/scm/proj.git
+
+
+      CONFIGURATION
+            Everything below this line in this section is selectively included from
+            the git-config(1) documentation. The content is the same as what's
+            found there:
+
+            init.templateDir
+                Specify the directory from which templates will be copied. (See the
+                "TEMPLATE DIRECTORY" section of git-init(1).)
+
+            init.defaultBranch
+                Allows overriding the default branch name e.g. when initializing a
+                new repository.
+
+            clone.defaultRemoteName
+                The name of the remote to create when cloning a repository.
+                Defaults to origin. It can be overridden by passing the --origin
+                command-line option.
+
+            clone.rejectShallow
+                Reject cloning a repository if it is a shallow one; this can be
+                overridden by passing the --reject-shallow option on the command
+                line.
+
+            clone.filterSubmodules
+                If a partial clone filter is provided (see --filter in git-rev-
+                list(1)) and --recurse-submodules is used, also apply the filter to
+                submodules.
+
+      GIT
+            Part of the git(1) suite
+
+      Git 2.46.0                        2024-07-29                      GIT-CLONE(1)
