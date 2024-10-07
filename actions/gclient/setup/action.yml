@@ -1,0 +1,58 @@
+name: GCLIENT Setup
+description: >
+  Installs `gclient` for Google's depot_tools.
+
+inputs:
+  path:
+    description: Path where to set up gclient.
+    required: true
+    default: .depot_tools
+  repository:
+    description: URL to depot_tools repository. Modification not recommended.
+    required: true
+    default: https://chromium.googlesource.com/chromium/tools/depot_tools.git
+
+outputs:
+  path:
+    description: Full path to gclient. (Add to $PATH env var)
+    value:
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: clone-gclient
+    name: Fetch gclient
+    uses: kagekirin/gha-py-toolbox/actions/git/clone@main
+    with:
+      path: ${{inputs.path}}
+      repository: https://chromium.googlesource.com/chromium/tools/depot_tools.git
+      token: ''
+      ref: ''
+
+  - id: path-gclient
+    name: Add Gclient to top of path
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/gclient/setup/action.yml#path-gclient
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = Path(os.getenv("inputs_path", "."))
+      assert inputs_path is not None
+      assert inputs_path.exists()
+
+      all_path = Path(os.environ["GITHUB_PATH"]).read_text()
+      with open(os.environ["GITHUB_PATH"], "w") as fh:
+          print(inputs_path.resolve())
+          print(inputs_path.resolve(), file=fh)
+          print(all_path, file=fh)
