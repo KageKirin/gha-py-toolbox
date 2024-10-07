@@ -55,85 +55,91 @@ runs:
       build_projects: ${{inputs.projects}}
       build_commit: ${{inputs.commit-message}}
     run: |
-      import os, sys, re, pprint, itertools, semver, subprocess
+      ## actions/dotnet/update-project-version/action.yml#update-versions
+      import os, sys, shlex, re, pprint, itertools, semver, subprocess
       from pathlib import Path
+      from contextlib import chdir
       from lxml import etree
       import pybars
 
-      basedir = os.getcwd()
-      os.chdir(str(os.getenv("build_path")))
-      version = semver.Version.parse(os.getenv("build_version"))
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
 
-      commit_message = os.getenv("build_commit")
-      commit_template = pybars.Compiler().compile(commit_message)
+      with chdir(str(os.getenv("build_path"))):
+          version = semver.Version.parse(os.getenv("build_version"))
 
-      projects = str(os.getenv("build_projects")).split()
-      if len(projects) == 0:
-          projects.append("*.csproj")
+          commit_message = os.getenv("build_commit")
+          commit_template = pybars.Compiler().compile(commit_message)
 
-      projects = [
-          p
-          for p in map(lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects)
-      ]
-      projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
-      assert len(projects) > 0
+          projects = str(os.getenv("build_projects")).split()
+          if len(projects) == 0:
+              projects.append("*.csproj")
 
-      parser = etree.XMLParser(remove_blank_text=True)
-
-      for project in projects:
-          folder = Path(project).parent
-          project_commit_count = int(
-              subprocess.check_output(
-                  ["git", "rev-list", "--all", "--count", "--", project]
-              ).decode()
-          )
-          folder_commit_count = int(
-              subprocess.check_output(
-                  ["git", "rev-list", "--all", "--count", "--", folder]
-              ).decode()
-          )
-
-          root = etree.parse(project, parser).getroot()
-
-          pnodes = root.xpath("/Project/PropertyGroup")
-          pnode = (
-              pnodes[0] if len(pnodes) else etree.SubElement(root, "PropertyGroup")
-          )
-
-          nodes = root.xpath("/Project/PropertyGroup/Version")
-          if len(nodes):
-              for node in nodes:
-                  node.text = f"{version}"
-          else:
-              node = etree.SubElement(pnode, "Version")
-              node.text = f"{version}"
-
-          nodes = root.xpath("/Project/PropertyGroup/AssemblyVersion")
-          if len(nodes):
-              for node in nodes:
-                  node.text = f"{version}.{folder_commit_count}"
-          else:
-              node = etree.SubElement(pnode, "AssemblyVersion")
-              node.text = f"{version}.{folder_commit_count}"
-
-          nodes = root.xpath("/Project/PropertyGroup/FileVersion")
-          if len(nodes):
-              for node in nodes:
-                  node.text = f"{version}.{project_commit_count}"
-          else:
-              node = etree.SubElement(pnode, "FileVersion")
-              node.text = f"{version}.{project_commit_count}"
-
-          Path(project).write_text(
-              etree.tostring(root, encoding="unicode", pretty_print=True)
-          )
-
-          if commit_message and len(commit_message):
-              message = commit_template(
-                  {"name": Path(project).name, "version": version}
+          projects = [
+              p
+              for p in map(
+                  lambda f: [g.as_posix() for g in Path(".").rglob(f)], projects
               )
-              os.system(f"git add {project}")
-              os.system(f'git commit -m "{message}"')
+          ]
+          projects = list(set([p for p in itertools.chain.from_iterable(projects)]))
+          assert len(projects) > 0
 
-      os.chdir(basedir)
-      exit(0)
+          parser = etree.XMLParser(remove_blank_text=True)
+
+          for project in projects:
+              folder = Path(project).parent
+              project_commit_count = int(
+                  subprocess.check_output(
+                      ["git", "rev-list", "--all", "--count", "--", project]
+                  ).decode()
+              )
+              folder_commit_count = int(
+                  subprocess.check_output(
+                      ["git", "rev-list", "--all", "--count", "--", folder]
+                  ).decode()
+              )
+
+              root = etree.parse(project, parser).getroot()
+
+              pnodes = root.xpath("/Project/PropertyGroup")
+              pnode = (
+                  pnodes[0]
+                  if len(pnodes)
+                  else etree.SubElement(root, "PropertyGroup")
+              )
+
+              nodes = root.xpath("/Project/PropertyGroup/Version")
+              if len(nodes):
+                  for node in nodes:
+                      node.text = f"{version}"
+              else:
+                  node = etree.SubElement(pnode, "Version")
+                  node.text = f"{version}"
+
+              nodes = root.xpath("/Project/PropertyGroup/AssemblyVersion")
+              if len(nodes):
+                  for node in nodes:
+                      node.text = f"{version}.{folder_commit_count}"
+              else:
+                  node = etree.SubElement(pnode, "AssemblyVersion")
+                  node.text = f"{version}.{folder_commit_count}"
+
+              nodes = root.xpath("/Project/PropertyGroup/FileVersion")
+              if len(nodes):
+                  for node in nodes:
+                      node.text = f"{version}.{project_commit_count}"
+              else:
+                  node = etree.SubElement(pnode, "FileVersion")
+                  node.text = f"{version}.{project_commit_count}"
+
+              Path(project).write_text(
+                  etree.tostring(root, encoding="unicode", pretty_print=True)
+              )
+
+              if commit_message and len(commit_message):
+                  message = commit_template(
+                      {"name": Path(project).name, "version": version}
+                  )
+                  os.system(f"git add {project}")
+                  os.system(f'git commit -m "{message}"')
+
+          exit(0)
