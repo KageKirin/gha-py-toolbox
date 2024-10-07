@@ -1,0 +1,75 @@
+name: GIT Prepare repository URL
+description: >
+  Prepares a correct repository URL from
+  - inputs.repository
+  - inputs.github-server-url
+  - inputs.ssh-user
+
+inputs:
+  # actions/checkout compatible
+  repository:
+    description: Repository name with owner. For example, actions/checkout
+    default: ${{github.repository}}
+  ssh-user:
+    description: >
+      The user to use when connecting to the remote SSH host. By default 'git' is
+      used.
+    default: git
+  github-server-url:
+    description: The base URL for the GitHub instance that you are trying to clone from, will use environment defaults to fetch from the same instance that the workflow is running from unless specified. Example URLs are https://github.com or https://my-ghes-server.example.com
+    required: true
+    default: ${{github.server_url}}
+
+
+outputs:
+  repository-url:
+    description: The branch, tag or SHA that was checked out
+    value: ${{steps.repo-url.outputs.url}}
+
+runs:
+  using: composite
+  steps:
+
+  - id: repo-url
+    name: Get Repository URL
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_github_server_url: ${{inputs.github-server-url}}
+      inputs_ssh_user: ${{inputs.ssh-user}}
+    run: |
+      ## actions/git/prepare-repo-url/action.yml#repo-url
+      import os
+      from urllib.parse import urlparse
+
+      inputs_repository = str(os.getenv("inputs_repository", ""))
+      assert inputs_repository is not None
+
+      inputs_ssh_user = str(os.getenv("inputs_ssh_user", ""))
+
+      repository_url = urlparse(inputs_repository)
+      print(repository_url)
+      assert repository_url is not None
+
+      if repository_url.path.startswith(f"{inputs_ssh_user}@"):
+          # ssh url in git@server:path format
+          # TODO: check with regex
+          assert inputs_ssh_user is not None
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"url=ssh://{repository_url.geturl()}")
+              print(f"url=ssh://{repository_url.geturl()}", file=fh)
+              exit(0)
+
+      if not repository_url.scheme and not repository_url.netloc:
+          # path only
+          inputs_github_server_url = str(os.getenv("inputs_github_server_url", ""))
+          assert inputs_github_server_url is not None
+          repository_url = urlparse(f"{inputs_github_server_url}/{inputs_repository}")
+
+      print("repository_url", repository_url.geturl())
+      assert repository_url.scheme is not None
+
+      # note: this is a full URL, so we can directly return it
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"url={repository_url.geturl()}")
+          print(f"url={repository_url.geturl()}", file=fh)
