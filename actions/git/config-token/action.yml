@@ -1,0 +1,62 @@
+name: GIT CONFIG Token
+description: >
+  Configure authorization tokens for Git
+
+inputs:
+  # actions/checkout compatible
+  repository:
+    description: Repository with full URL, e.g. https://github.com/actions/checkout
+    required: true
+  token:
+    description: >
+      Personal access token (PAT) used to fetch the repository. The PAT is configured
+      with the local git config, which enables your scripts to run authenticated git
+      commands. The post-job step removes the PAT.
+
+
+      We recommend using a service account with the least permissions necessary.
+      Also when generating a new PAT, select the least scopes necessary.
+
+
+      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+    default: ${{github.token}}
+
+runs:
+  using: composite
+  steps:
+
+  - id: configure-token
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_token: ${{inputs.token}}
+    run: |
+      ## actions/git/config-token/action.yml#configure-token
+      import os, base64
+      from urllib.parse import urlparse
+
+      inputs_repository = str(os.getenv("inputs_repository", ""))
+      assert inputs_repository is not None
+
+      inputs_token = str(os.getenv("inputs_token"))
+      if not inputs_token:
+          inputs_token = str(os.getenv("GITHUB_TOKEN"))
+      assert inputs_token is not None
+
+      repository_url = urlparse(inputs_repository)
+      assert repository_url is not None
+      assert repository_url.scheme is not None
+
+      tokenKey = f"http.{repository_url.geturl()}/.extraheader"
+      tokenPlaceholderConfigValue = f"AUTHORIZATION: basic {inputs_token}"
+
+      basicCredential = base64.b64encode(
+          f"x-access-token:{inputs_token}".encode("utf8")
+      ).decode("ascii")
+      tokenConfigValue = f"AUTHORIZATION: basic {basicCredential}"
+
+      err = os.waitstatus_to_exitcode(
+          os.system(f'git config --global {tokenKey} "{tokenConfigValue}"')
+      )
+      print("err:", err)
+      assert err == 0

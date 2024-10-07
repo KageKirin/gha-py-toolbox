@@ -1,0 +1,36 @@
+name: GIT Config Safe Dir
+description: >
+  Add repository path as safe.directory for Git global config by running
+
+inputs:
+  path:
+    description: Relative path under $GITHUB_WORKSPACE to place the repository
+    required: true
+  set-safe-directory:
+    description: Add repository path as safe.directory for Git global config by running `git config --global --add safe.directory <path>`
+    default: true
+
+runs:
+  using: composite
+  steps:
+
+  - id: set-safe-directory
+    if: ${{ fromJSON(inputs.set-safe-directory) }}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/git/config-safe-dir/action.yml#set-safe-directory
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = Path(os.getenv("inputs_path"))
+      assert inputs_path is not None
+
+      err = os.waitstatus_to_exitcode(
+          os.system(f"git config --global --add safe.directory {inputs_path}")
+      )
+      print("err:", err)
+      exit(err)
