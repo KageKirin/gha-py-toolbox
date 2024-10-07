@@ -1,0 +1,396 @@
+name: GCLIENT checkout
+description: >
+  Checkout using `gclient`.
+  Works with every repo having a DEPS file at their root.
+
+  This actions:
+  - creates a `.gclient` configuration file at the root of the workspace
+  - fetches recursively the indicated repos using gclient.
+
+  NOTE: requires running e.g. gclient/setup to set up gclient beforehand
+
+inputs:
+  repository:
+    description: Repository name with owner. For example, actions/checkout
+    default: ${{github.repository}}
+  ref:
+    description: >
+      The branch, tag or SHA to checkout. When checking out the repository that
+      triggered a workflow, this defaults to the reference or SHA for that
+      event.  Otherwise, uses the default branch.
+    required: false
+    default: ${{github.ref_name}}
+  token:
+    description: >
+      Personal access token (PAT) used to fetch the repository. The PAT is configured
+      with the local git config, which enables your scripts to run authenticated git
+      commands. The post-job step removes the PAT.
+
+
+      We recommend using a service account with the least permissions necessary.
+      Also when generating a new PAT, select the least scopes necessary.
+
+
+      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+    default: ${{github.token}}
+  ssh-key:
+    description: >
+      SSH key used to fetch the repository. The SSH key is configured with the local
+      git config, which enables your scripts to run authenticated git commands.
+      The post-job step removes the SSH key.
+
+
+      We recommend using a service account with the least permissions necessary.
+
+
+      [Learn more about creating and using
+      encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+  ssh-known-hosts:
+    description: >
+      Known hosts in addition to the user and global host key database. The public
+      SSH keys for a host may be obtained using the utility `ssh-keyscan`. For example,
+      `ssh-keyscan github.com`. The public key for github.com is always implicitly
+      added.
+  ssh-strict:
+    description: >
+      Whether to perform strict host key checking. When true, adds the options `StrictHostKeyChecking=yes`
+      and `CheckHostIP=no` to the SSH command line. Use the input `ssh-known-hosts`
+      to
+      configure additional hosts.
+    default: true
+  ssh-user:
+    description: >
+      The user to use when connecting to the remote SSH host. By default 'git' is
+      used.
+    default: git
+  persist-credentials:
+    description: Whether to configure the token or SSH key with the local git config
+    default: true
+  path:
+    description: Relative path under $GITHUB_WORKSPACE to place the repository
+  clean:
+    description: Whether to execute `git clean -ffdx && git reset --hard HEAD` before fetching
+    default: true
+  filter:
+    description: >
+      Partially clone against a given filter.
+      Overrides sparse-checkout if set.
+    default:
+  sparse-checkout:
+    description: >
+      Do a sparse checkout on given patterns.
+      Each pattern should be separated with new lines.
+    default:
+  sparse-checkout-cone-mode:
+    description: >
+      Specifies whether to use cone-mode when doing a sparse checkout.
+    default: true
+  fetch-depth:
+    description: Number of commits to fetch. 0 indicates all history for all branches and tags.
+    default: 1
+  fetch-tags:
+    description: Whether to fetch tags, even if fetch-depth > 0.
+    default: false
+  show-progress:
+    description: Whether to show progress status output when fetching.
+    default: true
+  lfs:
+    description: Whether to download Git-LFS files
+    default: false
+  submodules:
+    description: >
+      Whether to checkout submodules: `true` to checkout submodules or `recursive`
+      to
+      recursively checkout submodules.
+
+
+      When the `ssh-key` input is not provided, SSH URLs beginning with `git@github.com:`
+      are
+      converted to HTTPS.
+    default: false
+  set-safe-directory:
+    description: Add repository path as safe.directory for Git global config by running `git config --global --add safe.directory <path>`
+    default: true
+  github-server-url:
+    description: The base URL for the GitHub instance that you are trying to clone from, will use environment defaults to fetch from the same instance that the workflow is running from unless specified. Example URLs are https://github.com or https://my-ghes-server.example.com
+    required: true
+    default: ${{github.server_url}}
+  checkout-head:
+    description: Whether to update HEAD to set the specified branch as the current branch.
+    required: false
+    default: false
+
+  deps-file:
+    description: overrides the default name for the DEPS file for the main solutions and all sub-dependencies
+    default: DEPS
+
+outputs:
+  ref:
+    description: The branch, tag or SHA that was checked out
+    value: ${{steps.checkout-state.outputs.ref}}
+  commit:
+    description: The commit SHA that was checked out
+    value: ${{steps.checkout-state.outputs.commit}}
+
+runs:
+  using: composite
+  steps:
+
+  - id: repo-url
+    uses: kagekirin/gha-py-toolbox/actions/git/prepare-repo-url@main
+    with:
+      repository: ${{inputs.repository}}
+      ssh-user: ${{inputs.ssh-user}}
+      github-server-url: ${{inputs.github-server-url}}
+
+  - id: configure-token
+    if: ${{inputs.token != ''}}
+    uses: kagekirin/gha-py-toolbox/actions/git/config-token@main
+    with:
+      repository: ${{steps.repo-url.outputs.repository-url}}
+      token: ${{inputs.token}}
+
+  - id: configure-ssh-key
+    if: ${{inputs.ssh-key != ''}}
+    uses: kagekirin/gha-py-toolbox/actions/git/config-ssh@main
+    with:
+      repository: ${{steps.repo-url.outputs.repository-url}}
+      ssh-key: ${{inputs.ssh-key}}
+      ssh-strict: ${{inputs.ssh-strict}}
+      ssh-known-hosts: ${{inputs.ssh-known-hosts}}
+      persist-credentials: ${{inputs.persist-credentials}}
+
+  - id: clean
+    shell: python
+    env:
+      inputs_clean: ${{inputs.clean}}
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/gclient/checkout/action.yml#clean
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_clean = os.getenv("inputs_clean") == "true"
+      inputs_path = Path(os.getenv("inputs_path"))
+      assert inputs_path is not None
+
+      if inputs_path.exists():
+          if inputs_clean:
+              inputs.path.unlink()
+
+
+  - id: lfs-install
+    if: ${{fromJSON(inputs.lfs)}}
+    shell: python
+    run: |
+      ## actions/gclient/checkout/action.yml#lfs-install
+      import os
+
+      err = os.waitstatus_to_exitcode(os.system("git lfs install"))
+      exit(err)
+
+  - id: gclient-config
+    shell: python
+    env:
+      inputs_repository: ${{steps.repo-url.outputs.repository-url}}
+      inputs_ref: ${{inputs.ref}}
+      inputs_path: ${{inputs.path}}
+      inputs_deps: ${{inputs.deps-file}}
+    run: |
+      ## actions/gclient/checkout/action.yml#gclient-config
+      import os, pprint
+      from pathlib import Path
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = Path(os.getenv("inputs_path", "repo"))
+      assert inputs_path is not None
+
+      inputs_repository = str(os.getenv("inputs_repository"))
+      assert inputs_repository is not None
+      assert urlparse(inputs_repository) is not None
+
+      inputs_ref = str(os.getenv("inputs_ref"))
+      at_inputs_ref = f"@{inputs_ref}" if inputs_ref else ""
+
+      inputs_deps = str(os.getenv("inputs_deps"))
+      assert inputs_deps is not None
+
+      solutions = [
+          {
+              "name": str(inputs_path),
+              "url": f"{inputs_repository}{at_inputs_ref}",
+              "deps_file": inputs_deps,
+              "managed": True,
+              "custom_deps": {},
+              "custom_vars": {},
+          }
+      ]
+
+      with Path(".gclient").open("w") as fh:
+          print(f"solutions={pprint.pformat(solutions)}")
+          print(f"solutions={pprint.pformat(solutions)}", file=fh)
+
+  - id: gclient-sync
+    shell: python
+    env:
+      inputs_show_progress: ${{inputs.show-progress}}
+    run: |
+      ## actions/gclient/checkout/action.yml#gclient-sync
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      progress = (
+          "--no-progress"
+          if str(os.getenv("inputs_show_progress", "true")) == "false"
+          else ""
+      )
+
+      assert Path(".gclient").exists()
+      err = os.waitstatus_to_exitcode(os.system(f"gclient sync {progress} -j4"))
+      print("err:", err)
+
+  - id: git-checkout
+    if: ${{ fromJSON(inputs.checkout-head) }}
+    shell: python
+    env:
+      inputs_ref: ${{inputs.ref}}
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/gclient/checkout/action.yml#git-checkout
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = Path(os.getenv("inputs_path", "repo"))
+      assert inputs_path is not None
+
+      inputs_ref = str(os.getenv("inputs_ref"))
+
+      if inputs_ref:
+          cmd = f"git -C {inputs_path} fetch origin {inputs_ref}"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          print("err:", err)
+          assert err == 0
+          cmd = f"git -C {inputs_path} checkout -b {inputs_ref} --track origin/{inputs_ref}"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          print("err:", err)
+          exit(err)
+
+
+  - id: gclient-recurse-lfs-checkout
+    if: ${{fromJSON(inputs.lfs)}}
+    shell: python
+    env:
+      inputs_show_progress: ${{inputs.show-progress}}
+    run: |
+      ## actions/gclient/checkout/action.yml#gclient-recurse-lfs-checkout
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      progress = (
+          "--no-progress"
+          if str(os.getenv("inputs_show_progress", "true")) == "false"
+          else ""
+      )
+
+      assert Path(".gclient").exists()
+      err = os.waitstatus_to_exitcode(
+          os.system(f"gclient recurse {progress} -j4 git lfs checkout")
+      )
+      print("err:", err)
+      exit(err)
+
+  - id: gclient-recurse-submodule-checkout
+    if: ${{ fromJSON(inputs.submodules) }}
+    shell: python
+    env:
+      inputs_show_progress: ${{inputs.show-progress}}
+    run: |
+      ## actions/gclient/checkout/action.yml#gclient-recurse-submodule-checkout
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      progress = (
+          "--no-progress"
+          if str(os.getenv("inputs_show_progress", "true")) == "false"
+          else ""
+      )
+
+      assert Path(".gclient").exists()
+      err = os.waitstatus_to_exitcode(
+          os.system(f"gclient recurse {progress} -j4 git submodule update --init")
+      )
+      print("err:", err)
+      exit(err)
+
+  - id: gclient-recurse-fetch-tags
+    if: ${{ fromJSON(inputs.fetch-tags) }}
+    shell: python
+    env:
+      inputs_show_progress: ${{inputs.show-progress}}
+    run: |
+      ## actions/gclient/checkout/action.yml#gclient-recurse-fetch-tags
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      progress = (
+          "--no-progress"
+          if str(os.getenv("inputs_show_progress", "true")) == "false"
+          else ""
+      )
+
+      assert Path(".gclient").exists()
+      err = os.waitstatus_to_exitcode(
+          os.system(f"gclient recurse {progress} -j4 git fetch --tags")
+      )
+      print("err:", err)
+      exit(err)
+
+
+  - id: checkout-state
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/gclient/checkout/action.yml#checkout-state
+      import os, subprocess
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = Path(os.getenv("inputs_path", "."))
+      assert inputs_path is not None
+
+      commit = subprocess.check_output(
+          f"git -C {inputs_path} log -n 1 --pretty=format:%h".split()
+      ).decode()
+      ref = subprocess.check_output(
+          f"git -C {inputs_path} name-rev --name-only {commit}".split()
+      ).decode()
+      # branch --show-current
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"ref={ref}")
+          print(f"ref={ref}", file=fh)
+          print(f"commit={commit}")
+          print(f"commit={commit}", file=fh)
+
+  - id: set-safe-directory
+    uses: kagekirin/gha-py-toolbox/actions/git/config-safe-dir@main
+    with:
+      path: ${{inputs.path}}
