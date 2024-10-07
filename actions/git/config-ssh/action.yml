@@ -1,0 +1,116 @@
+name: GIT Config SSH
+description: >
+  Configure SSH for Git
+
+inputs:
+  # actions/checkout compatible
+  repository:
+    description: Repository with full URL, e.g. https://github.com/actions/checkout
+    required: true
+  ssh-key:
+    description: >
+      SSH key used to fetch the repository. The SSH key is configured with the local
+      git config, which enables your scripts to run authenticated git commands.
+      The post-job step removes the SSH key.
+
+
+      We recommend using a service account with the least permissions necessary.
+
+
+      [Learn more about creating and using
+      encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+  ssh-known-hosts:
+    description: >
+      Known hosts in addition to the user and global host key database. The public
+      SSH keys for a host may be obtained using the utility `ssh-keyscan`.
+  ssh-strict:
+    description: >
+      Whether to perform strict host key checking. When true, adds the options `StrictHostKeyChecking=yes`
+      and `CheckHostIP=no` to the SSH command line. Use the input `ssh-known-hosts`
+      to
+      configure additional hosts.
+    default: true
+  persist-credentials:
+    description: Whether to configure the token or SSH key with the local git config
+    default: true
+
+
+runs:
+  using: composite
+  steps:
+
+  - id: configure-known-hosts
+    shell: python
+    env:
+      inputs_ssh_known_hosts: ${{inputs.ssh-known-hosts}}
+    run: |
+      ## actions/git/config-ssh/action.yml#configure-known-hosts
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      runnerTemp = Path(os.getenv("RUNNER_TEMP", ""))
+      assert runnerTemp is not None
+      sshKeyPath = runnerTemp.joindir(uuid())
+      sshKeyPath.parent.mkdir(parents=True, exist_ok=True)
+
+      known_hosts = runnerTemp.joinpath(".ssh", "known_hosts")
+      all_known_hosts = known_hosts.read_text().split("\n")
+
+      inputs_ssh_known_hosts = str(os.getenv("inputs_ssh_known_hosts", "")).split(
+          "\n"
+      )
+      with known_hosts.open("a") as fh:
+          for host in inputs_ssh_known_hosts:
+              if not host in all_known_hosts:
+                  print(host, file=fh)
+
+  - id: configure-ssh-key
+    if: ${{inputs.ssh-key != ''}}
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_ssh_key: ${{inputs.ssh-key}}
+      inputs_ssh_strict: ${{inputs.ssh-strict}}
+      inputs_persist_credentials: ${{inputs.persist-credentials}}
+    run: |
+      ## actions/git/config-ssh/action.yml#configure-ssh-key
+      import os, subprocess
+      from urllib.parse import urlparse
+      from uuid import uuid4 as uuid
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_repository = str(os.getenv("inputs_repository", ""))
+      assert inputs_repository is not None
+
+      inputs_ssh_key = str(os.getenv("inputs_ssh_key"))
+      assert inputs_ssh_key is not None
+
+      inputs_ssh_strict = os.getenv("inputs_ssh_strict", "true") == "true"
+      inputs_persist_credentials = (
+          os.getenv("inputs_persist_credentials", "true") == "true"
+      )
+
+      # write sshKey
+      runnerTemp = Path(os.getenv("RUNNER_TEMP", ""))
+      assert runnerTemp is not None
+      sshKeyPath = runnerTemp.joindir(uuid())
+      sshKeyPath.parent.mkdir(parents=True, exist_ok=True)
+      sshKeyPath.write_text(inputs_ssh_key.trim() + "\n")
+      sshKeyPath.chmod(0o600)
+
+      # configure GIT_SSH_COMMAND
+      sshPath = Path(subprocess.check_output(["which", "ssh"]).decode())
+      sshCommand = f'"{sshPath}" -i "$RUNNER_TEMP/{sshKeyPath.name}"'
+
+      if inputs_ssh_strict:
+          sshCommand += " -o StrictHostKeyChecking=yes -o CheckHostIP=no"
+      sshCommand += ' -o "UserKnownHostsFile=$RUNNER_TEMP/known_hosts'
+
+      err = os.waitstatus_to_exitcode(
+          os.system(f"git config --global core.sshCommand {sshCommand}")
+      )
+      print("err:", err)
+      exit(err)
