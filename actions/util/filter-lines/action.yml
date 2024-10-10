@@ -1,0 +1,85 @@
+name: UTIL filter lines
+description: >
+  Apply filter to lines and return matching/non-matching
+
+inputs:
+  pattern:
+    description: >
+      The filter pattern, i.e. regular expression.
+    required: true
+    default: .*
+  lines:
+    description: >
+      The input lines to filter
+    required: true
+  reverse:
+    description: >
+      Whether to reverse the match,
+      i.e. return non-matching lines.
+    required: false
+    default: false
+  strict:
+    description: >
+      Whether to strictly match,
+      i.e. full match.
+      Default: (false) => partial match
+    required: false
+    default: false
+
+
+outputs:
+  lines:
+    description: >
+      The filtered lines
+    value: ${{steps.filter.outputs.lines}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: filter
+    name: Filter
+    shell: python
+    env:
+      input_pattern: ${{inputs.pattern}}
+      input_file: ${{inputs.file}}
+      input_reverse: ${{inputs.reverse}}
+      input_strict: ${{inputs.strict}}
+    run: |
+      ## actions/util/filter-lines/action.yml#filter
+      import os, re, pprint
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      pattern = re.compile(os.getenv("input_pattern"))
+      assert pattern is not None
+
+      lines = list(str(os.getenv("input_lines", "*.*")).split("\n"))
+      assert lines is not None
+      assert len(lines) > 0
+
+      print("input:")
+      pprint.pp(lines)
+
+      opt_reverse = str(os.getenv("input_reverse")) == "true"
+      opt_strict = str(os.getenv("input_strict")) == "true"
+
+      matcher = (
+          (lambda regex: regex.match) if opt_strict else (lambda regex: regex.search)
+      )
+      fullfilter = (
+          (lambda l: not matcher(pattern)(l))
+          if opt_reverse
+          else (lambda l: matcher(pattern)(l))
+      )
+
+      print("output:")
+      filtered_lines = list(filter(fullfilter, lines))
+
+      pprint.pp(filtered_lines)
+
+      output_lines = "\n".join(filtered_lines)
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"lines='{output_lines}'")
+          print(f"lines='{output_lines}'", file=fh)
