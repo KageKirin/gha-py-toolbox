@@ -1,0 +1,86 @@
+name: .NET get project references
+description: >
+  Retrieves the package references from the provided projects.
+
+inputs:
+  path:
+    description: Path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  projects:
+    description: >
+      Project(s) to update
+      Empty string defaults to all projects.
+
+      Whitespace-separated list. can use glob pattern.
+      Empty string (default) defers to solution.
+    required: false
+    default: ''
+
+outputs:
+  dependencies:
+    description: The unversioned dependencies
+    value: ${{steps.filter.outputs.dependencies}}
+  dependencies_at_version:
+    description: The versioned dependencies (`package@1.2.3` format).
+    value: ${{steps.filter.outputs.versioned_deps}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: get-references
+    name: Get project references
+    shell: python
+    env:
+      input_path: ${{inputs.path}}
+      input_projects: ${{inputs.projects}}
+    run: |
+      ## actions/dotnet/get-project-references/action.yml#get-references
+      import os, pprint
+      import xmltodict
+      from lxml import etree
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      input_path = Path(os.getenv("input_path", "."))
+      input_projects = str(os.getenv("input_projects", "**/*.csproj")).split()
+
+      parser = etree.XMLParser(remove_blank_text=True)
+
+      dependencies = set()
+      for p in input_projects:
+          for project in input_path.rglob(p):
+              print(project)
+              prj = xmltodict.parse(project.read_text())
+              pprint.pp(prj)
+
+              root = etree.parse(project, parser).getroot()
+
+              packageReferences = root.xpath("/Project/ItemGroup/PackageReference")
+              pprint.pp(packageReferences)
+
+              for packageReference in packageReferences:
+                  package = packageReference.attrib["Include"]
+                  version = packageReference.attrib["Version"]
+                  print(package, version)
+                  dependencies.add((package, version))
+
+      pprint.pp(dependencies)
+
+      pure_deps = "\n".join(map(lambda t: t[0], dependencies))
+      versioned_deps = "\n".join(map(lambda t: f"{t[0]}@{t[1]}", dependencies))
+
+      output_lines = "\n".join(filtered_lines)
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"dependencies='{pure_deps}'")
+          print(f"dependencies='{pure_deps}'", file=fh)
+          print(f"versioned_deps='{versioned_deps}'")
+          print(f"versioned_deps='{versioned_deps}'", file=fh)
