@@ -1,0 +1,43 @@
+name: UNITY install requirements
+description: >-
+  Macro to install required (apt) packages for running Unity
+  and compiling Unity applications on Linux.
+
+runs:
+  using: composite
+  steps:
+  - uses: kagekirin/gha-py-toolbox/actions/install/apt-get@main
+    with:
+      sudo: sudo
+      packages: |
+        libgl1
+        libegl1
+        libglib2.0-0
+        libghc-opengl-dev
+        libghc-opengl-prof
+        libgle3
+        libgle3-dev
+        gle-graphics
+        glew-utils
+        libglew-dev
+        libglew2.1
+        libglfw3
+        libglfw3-dev
+        libglfw3-wayland
+        libglm-dev
+        libvulkan-dev
+        libvulkan1
+        libvulkan-memory-allocator-dev
+        vulkan-tools
+        vulkan-utility-libraries-dev
+        vulkan-validationlayers
+        vulkan-validationlayers-dev
+        libvulkan-volk-dev
+        libxcursor-dev
+        xorg-dev
+        libwayland-dev
+        libxkbcommon-dev
+        wayland-protocols
+        extra-cmake-modules
+        libgtk-3-0
+        libgtk-3-dev
