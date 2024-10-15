@@ -1,0 +1,52 @@
+name: UNITY install requirements
+description: >-
+  Macro to install required (apt) packages for running Unity
+  and compiling Unity applications on Linux.
+
+runs:
+  using: composite
+  steps:
+  - uses: kagekirin/gha-py-toolbox/actions/install/apt-get@main
+    with:
+      sudo: sudo
+      packages: |
+        libgl1
+        libegl1
+        libglib2.0-0
+        libghc-opengl-dev
+        libghc-opengl-prof
+        libgle3
+        libgle3-dev
+        gle-graphics
+        glew-utils
+        libglew-dev
+        libglfw3
+        libglfw3-dev
+        libglm-dev
+        libvulkan-dev
+        libvulkan1
+        vulkan-tools
+        vulkan-validationlayers
+        vulkan-validationlayers-dev
+        libvulkan-volk-dev
+        libxcursor-dev
+        xorg-dev
+        libwayland-dev
+        libxkbcommon-dev
+        wayland-protocols
+        extra-cmake-modules
+        libgtk-3-0
+        libgtk-3-dev
+        libarchive13
+        mono-devel
+        nuget
+
+  - id: get-nuget-path
+    uses: kagekirin/gha-py-toolbox/actions/util/which@main
+    with:
+      what: nuget
+  - id: update-nuget-exe
+    uses: kagekirin/gha-py-toolbox/actions/util/download-file@main
+    with:
+      url: https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+      file: ${{ steps.get-nuget-path.outputs.where }}
