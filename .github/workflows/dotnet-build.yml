@@ -1,0 +1,115 @@
+name: dotnet-build
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+      max-parallel:
+        description: Number of maximum parallel runners
+        type: number
+        default: 4
+        required: false
+      configurations:
+        description: |-
+          JSON array of matrix.configurations to build, e.g. `'["Debug", "Release"]'`
+        type: string
+        required: true
+      frameworks:
+        description: |-
+          JSON array of matrix.frameworks to build, e.g. `'["net9.0", "netstandard2.1"]'`
+        type: string
+        required: true
+      include:
+        description: |-
+          JSON array of matrix.input combinations to build, e.g. `'[{"framework": "net9.0", "projects": "net9.0.slnf"}, {"framework": "netstandard2.1", "projects": "netstandard2.1.slnf"}]'`
+        type: string
+        required: true
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: false
+      GH_READONLY_TOKEN:
+        description: Read-only repository access token (repo:read)
+        required: true
+      GH_PACKAGE_TOKEN:
+        description: GitHub Package registry token (packages:read)
+        required: true
+
+
+jobs:
+  about:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - name: Show infos about GitHub
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ toJSON(github) }}
+
+    - name: Show infos about event
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ toJSON(github.event) }}
+
+    - name: Show build configurations
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.configurations }}
+    - name: Show build frameworks
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.frameworks }}
+    - name: Show build include
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.include }}
+
+  build:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.max-parallel }}
+      matrix:
+        configurations: ${{ fromJSON(inputs.configurations) }}
+        frameworks: ${{ fromJSON(inputs.frameworks) }}
+        include: ${{ fromJSON(inputs.include) }}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+          dotnet
+    - uses: kagekirin/gha-py-toolbox/actions/ssh/add-public-host-key@main
+      with:
+        hostname: github.com
+    - uses: kagekirin/gha-py-toolbox/jobs/dotnet/checkout-build@main
+      with:
+        lfs: true
+        token: ${{ secrets.GH_READONLY_TOKEN || secrets.GITHUB_TOKEN }}
+        persist-credentials: true
+        configurations: ${{ matrix.configurations }}
+        frameworks: ${{ matrix.frameworks }}
+        projects: ${{ matrix.projects }}
+        nuget-cache: ${{github.workspace}}/.packages
+        build-cache: ${{github.workspace}}/.artifacts
+      env:
+        GH_NUGET_USER: ${{ github.actor }}
+        GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN || secrets.GITHUB_TOKEN }}
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1
+        MSBUILDDISABLENODEREUSE: 1
