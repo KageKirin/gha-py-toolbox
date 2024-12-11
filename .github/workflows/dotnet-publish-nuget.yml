@@ -1,0 +1,141 @@
+name: dotnet-publish-nuget
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+      max-parallel:
+        description: Number of maximum parallel runners
+        type: number
+        default: 1
+        required: false
+      configurations:
+        description: |-
+          JSON array of configurations to build, e.g. `'["Debug", "Release"]'`
+        type: string
+        required: true
+        default: |-
+          ["Release"]
+      frameworks:
+        description: |-
+          JSON array of frameworks to build, e.g. `'["net9.0", "netstandard2.1"]'`
+        type: string
+        required: true
+      projects:
+        description: |-
+          JSON array of projects, solutions or solution filters to build, e.g. `'["MascotCapsule.Assets.sln"]'`
+        type: string
+        required: true
+        default: '[]'
+      sources:
+        description: |-
+          JSON array of NuGet sources (repositories) to target (shorthand), e.g. `'["github", "nuget"]'`
+        type: string
+        required: true
+      include:
+        description: |-
+          JSON array of matrix.input combinations to build,
+          e.g. ```
+          [
+            {
+              "source": "github",
+              "registry": "https://nuget.pkg.github.com/$GITHUB_REPOSITORY_OWNER/index.json",
+              "username": "$GITHUB_REPOSITORY_OWNER",
+              "token": "GH_PACKAGE_TOKEN"
+            },
+            {
+              "source": "nuget",
+              "registry": "https://api.nuget.org/v3/index.json",
+              "username": "$NUGET_USER",
+              "token": "NUGET_TOKEN"
+            }
+          ]
+          ```
+        type: string
+        required: true
+      dry-run:
+        description: Whether to run action without effects
+        type: boolean
+        default: true
+        required: false
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: false
+      GH_READONLY_TOKEN:
+        description: Read-only repository access token (repo:read)
+        required: true
+      GH_PACKAGE_TOKEN:
+        description: GitHub Package registry token (packages:read)
+        required: true
+      GH_PUBLISH_TOKEN:
+        description: GitHub Package registry token for publishing (packages:write)
+        required: true
+
+
+jobs:
+  publish-nuget:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      packages: write # allow GITHUB_TOKEN to publish packages
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        source: ${{ fromJSON(inputs.sources) }}
+        include: ${{ fromJSON(inputs.include) }}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+          dotnet
+    - uses: kagekirin/gha-py-toolbox/actions/ssh/add-public-host-key@main
+      with:
+        hostname: github.com
+
+    - name: Show build configurations
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.configurations }}
+    - name: Show build frameworks
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.frameworks }}
+    - name: Show build projects
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.projects }}
+
+    - id: build-pack-publish
+      uses: kagekirin/gha-py-toolbox/jobs/dotnet/checkout-build-pack-publish@main
+      with:
+        registry: ${{ matrix.registry }}
+        nuget-token: ${{ secrets[matrix.token] }}
+        lfs: true
+        token: ${{ secrets.GH_READONLY_TOKEN || secrets.GITHUB_TOKEN }}
+        persist-credentials: true
+        frameworks: ${{ join(fromJSON(inputs.frameworks), ' ') }}
+        configurations: ${{ join(fromJSON(inputs.configurations), ' ') }}
+        projects: ${{ join(fromJSON(inputs.projects), ' ') }}
+        filter-packages: |-
+          ^(\.artifacts).*$
+        restore-options: ${{ matrix.restore-options }}
+        build-options: -nodeReuse:false ${{ matrix.build-options }}
+        pack-options: -nodeReuse:false ${{ matrix.pack-options }}
+        publish-options: ${{ matrix.publish-options }}
+        dry-run: ${{ inputs.dry-run }}
+      env:
+        GH_NUGET_USER: ${{ github.actor }}
+        GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN || secrets.GITHUB_TOKEN }}
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1
+        MSBUILDDISABLENODEREUSE: 1
