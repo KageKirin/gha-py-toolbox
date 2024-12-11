@@ -1,0 +1,52 @@
+name: dotnet-release
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+      dry-run:
+        description: Whether to run action without effects
+        type: boolean
+        default: true
+        required: false
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Package registry access token (packages:read)
+        required: false
+      GH_CHAIN_TOKEN:
+        description: GitHub Package repository write token (repo:write)
+        required: true
+
+
+jobs:
+  tag-release:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      contents: write
+      packages: read
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - uses: kagekirin/gha-py-toolbox/actions/ssh/add-public-host-key@main
+      with:
+        hostname: github.com
+    - uses: kagekirin/gha-py-toolbox/jobs/git/checkout-bump-tag-release@main
+      with:
+        token: ${{ secrets.GH_CHAIN_TOKEN || secrets.GITHUB_TOKEN }}
+        persist-credentials: true
+        commit-message: 'build (ci): update to '
+        tag-message: 'tag:'
+        name: 'GitHub CI on behalf of ${{ github.actor }}'
+        bump_patch: true
+        dry-run: ${{ inputs.dry-run }}
