@@ -1,0 +1,60 @@
+name: github-add-published-package-to-release
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: false
+      GH_CHAIN_TOKEN:
+        description: GitHub Package repository write token (repo:write)
+        required: true
+
+
+jobs:
+  about:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - name: Show infos about GitHub
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ toJSON(github) }}
+    - name: Show infos about event
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ toJSON(github.event) }}
+
+
+  release-published:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      packages: read
+      contents: write
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - id: upload-published-packages
+      name: Upload published package files
+      uses: kagekirin/gha-py-toolbox/jobs/gh/release-published-packages@main
+      with:
+        token: ${{secrets.GH_CHAIN_TOKEN}}
+        registry_package_json: ${{ toJSON(github.event.registry_package) }}
