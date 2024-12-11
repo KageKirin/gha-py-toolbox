@@ -1,0 +1,192 @@
+name: dotnet-publish-upm
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+      max-parallel:
+        description: Number of maximum parallel runners
+        type: number
+        default: 2
+        required: false
+      amalgamate:
+        description: |-
+          JSON array of amalgamate configurations to build, e.g. `'["", "true"]'`
+        type: string
+        required: true
+        default: |-
+          ["Release"]
+      targets:
+        description: |-
+          JSON array of registries to target (shorthand), e.g. `'["github", "npmjs"]'`
+          NOTE: Google Cloud-based target registries MUST start with `gcp`
+        type: string
+        required: true
+      include:
+        description: |-
+          JSON array of matrix.input combinations to target, expanding on targets,
+          e.g. ```
+          '[{
+              "target": "github",
+              "registry": "https://npm.pkg.github.com/@$GITHUB_REPOSITORY_OWNER",
+              "token": "GH_PACKAGE_TOKEN"
+            },
+            {
+              "target": "npmjs",
+              "registry": "https://registry.npmjs.org",
+              "token": "NPMJS_ORG_TOKEN"
+            },
+            {
+              "target": "gcp-my-repo",
+              "registry": "https://region-npm.pkg.dev/my/repo/",
+              "token": "GITHUB_TOKEN",
+              "credentials-json": "GCP_CREDENTIALS_JSON"
+            }
+          ]'
+          ```
+        type: string
+        required: true
+      dry-run:
+        description: Whether to run action without effects
+        type: boolean
+        default: true
+        required: false
+      nugettier-config:
+        description: NuGettier `.netconfig` as string (file contents)
+        type: string
+        required: true
+      nugettier-user-config:
+        description: NuGettier `.netconfig.user` as string (file contents)
+        type: string
+        required: false
+        default: ''
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: false
+      GH_READONLY_TOKEN:
+        description: Read-only repository access token (repo:read)
+        required: true
+      GH_PACKAGE_TOKEN:
+        description: GitHub Package registry token (packages:read)
+        required: true
+      GH_PUBLISH_TOKEN:
+        description: GitHub Package registry token for publishing (packages:write)
+        required: true
+
+
+jobs:
+  about:
+    if: ${{ (github.event.registry_package.ecosystem == 'nuget' || github.event.registry_package.package_type == 'nuget') }}
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    steps:
+    - name: Show infos about published package
+      shell: bash
+      run: |-
+        echo '${{ github.event.registry_package }}'
+        echo "ecosystem: ${{ github.event.registry_package.ecosystem }}"
+        echo "name: ${{ github.event.registry_package.name }}"
+        echo "namespace: ${{ github.event.registry_package.namespace }}"
+        echo "package_type: ${{ github.event.registry_package.package_type }}"
+        echo "installation_command: ${{ github.event.registry_package.package_version.installation_command }}"
+        echo "name: ${{ github.event.registry_package.package_version.name }}"
+        echo "npm_metadata: ${{ github.event.registry_package.package_version.npm_metadata }}"
+        echo "nuget_metadata: ${{ github.event.registry_package.package_version.nuget_metadata }}"
+
+
+  upm:
+    if: ${{ (github.event.registry_package.ecosystem == 'nuget' || github.event.registry_package.package_type == 'nuget') }}
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      contents: read
+      packages: write # allow GITHUB_TOKEN to publish packages
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        amalgamate: ${{ fromJSON(inputs.amalgamate) }}
+        target: ${{ fromJSON(inputs.targets) }}
+        include: ${{ fromJSON(inputs.include) }}
+    env:
+      GH_NUGET_USER: ${{github.actor}}
+      GH_NUGET_TOKEN: ${{secrets.GH_PACKAGE_TOKEN}}
+    steps:
+    - name: Install prerequisites
+      uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{secrets.GH_READONLY_TOKEN}}
+        systems: |
+          python
+          dotnet
+          npm
+
+    - id: install-gcpsdk
+      if: ${{startsWith(matrix.target, 'gcp')}}
+      name: Install Google Cloud SDK
+      uses: kagekirin/gha-py-toolbox/actions/gcloud/setup@main
+    - id: activate-gcpsdk
+      if: ${{startsWith(matrix.target, 'gcp')}}
+      name: Activate Google Cloud SDK
+      uses: kagekirin/gha-py-toolbox/actions/gcloud/activate-service-account@main
+      with:
+        credentials: ${{secrets[matrix.credentials-json]}}
+
+
+    - name: Install NuGettier
+      uses: kagekirin/NuGettier/.github/actions/install@main
+      with:
+        accept-license: YES
+    - name: Write NuGettier configuration (.netconfig)
+      uses: kagekirin/gha-py-toolbox/actions/util/dump-to-file@main
+      with:
+        contents: ${{inputs.nugettier-config}}
+        file: .netconfig
+    - name: Write NuGettier user configuration (.netconfig.user)
+      uses: kagekirin/gha-py-toolbox/actions/util/dump-to-file@main
+      with:
+        contents: ${{inputs.nugettier-user-config}}
+        file: .netconfig.user
+    - name: Fetch user NuGet.config
+      uses: kagekirin/gha-py-toolbox/actions/gh/download-textfile@main
+      with:
+        token: ${{secrets.GH_PACKAGE_TOKEN}}
+        ref: main
+        source-file: NuGet.config
+        target-file: NuGet.config
+    - id: nuget-config
+      name: Configure NuGet sources from NuGet.config
+      uses: kagekirin/gha-py-toolbox/actions/upm/nugettier-config-nuget@main
+      with:
+        nuget-config: NuGet.config
+
+    - id: upm-pack
+      name: Pack UPM package through NuGettier
+      uses: kagekirin/gha-py-toolbox/actions/upm/nugettier-pack@main
+      with:
+        registry: ${{matrix.registry}}
+        package: ${{github.event.registry_package.name}}
+        version: ${{github.event.registry_package.package_version.name}}
+        amalgamate: ${{matrix.amalgamate}}
+        unity: '2022.3'
+        repository: ${{github.event.repository.clone_url}}
+        directory: ''
+        verbosity: trace
+
+    - id: upm-publish
+      name: Publish UPM package
+      uses: kagekirin/gha-py-toolbox/actions/upm/publish-package@main
+      with:
+        packagefile: ${{steps.upm-pack.outputs.packagefile}}
+        registry: ${{matrix.registry}}
+        token: ${{steps.activate-gcpsdk.outputs.token != '' && steps.activate-gcpsdk.outputs.token || secrets[matrix.token]}}
+        access: public
+        dry-run: ${{ inputs.dry-run }}
