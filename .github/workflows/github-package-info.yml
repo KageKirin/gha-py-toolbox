@@ -1,0 +1,45 @@
+name: github-package-info
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: false
+
+jobs:
+  info:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - name: Show infos about published package
+      shell: bash
+      run: |-
+        echo '${{ github.event.registry_package }}'
+        echo "ecosystem: ${{ github.event.registry_package.ecosystem }}"
+        echo "name: ${{ github.event.registry_package.name }}"
+        echo "namespace: ${{ github.event.registry_package.namespace }}"
+        echo "package_type: ${{ github.event.registry_package.package_type }}"
+        echo "installation_command: ${{ github.event.registry_package.package_version.installation_command }}"
+        echo "name: ${{ github.event.registry_package.package_version.name }}"
+        echo "npm_metadata: ${{ github.event.registry_package.package_version.npm_metadata }}"
+        echo "nuget_metadata: ${{ github.event.registry_package.package_version.nuget_metadata }}"
+
+    - name: Show infos about GitHub registry_package event
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ toJSON(github.event.registry_package) }}
