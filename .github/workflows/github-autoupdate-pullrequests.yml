@@ -1,0 +1,64 @@
+name: autoupdate
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: false
+      GH_CHAIN_TOKEN:
+        description: GitHub Package repository write token (repo:write)
+        required: true
+
+
+jobs:
+  autoupdate:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      contents: write
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - uses: kagekirin/gha-py-toolbox/actions/ssh/add-public-host-key@main
+      with:
+        hostname: github.dena.jp
+    - id: autoupdate-pullrequests-ordered-instamerge
+      uses: kagekirin/gha-py-toolbox/jobs/gh/autoupdate-pullrequests@main
+      with:
+        token: ${{ secrets.GH_CHAIN_TOKEN || secrets.GITHUB_TOKEN }}
+        count: 1
+        filter-title: '\#ordered \#instamerge$'
+    - id: autoupdate-pullrequests-instamerge
+      if: ${{ steps.autoupdate-pullrequests-ordered-instamerge.outputs.count == 0 }}
+      uses: kagekirin/gha-py-toolbox/jobs/gh/autoupdate-pullrequests@main
+      with:
+        token: ${{ secrets.GH_CHAIN_TOKEN || secrets.GITHUB_TOKEN }}
+        count: 1
+        filter-title: '\#instamerge$'
+    - id: autoupdate-pullrequests-ordered-automerge
+      if: ${{ steps.autoupdate-pullrequests-ordered-instamerge.outputs.count == 0 && steps.autoupdate-pullrequests-instamerge.outputs.count == 0 }}
+      uses: kagekirin/gha-py-toolbox/jobs/gh/autoupdate-pullrequests@main
+      with:
+        token: ${{ secrets.GH_CHAIN_TOKEN || secrets.GITHUB_TOKEN }}
+        count: 1
+        filter-title: '\#ordered \#automerge$'
+    - id: autoupdate-pullrequests-automerge
+      if: ${{ steps.autoupdate-pullrequests-ordered-automerge.outputs.count == 0 && steps.autoupdate-pullrequests-ordered-instamerge.outputs.count == 0 && steps.autoupdate-pullrequests-instamerge.outputs.count == 0 }}
+      uses: kagekirin/gha-py-toolbox/jobs/gh/autoupdate-pullrequests@main
+      with:
+        token: ${{ secrets.GH_CHAIN_TOKEN || secrets.GITHUB_TOKEN }}
+        count: 1
+        filter-title: '\#automerge$'
