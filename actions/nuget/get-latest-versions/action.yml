@@ -1,0 +1,90 @@
+name: NUGET get latest packages versions
+description: >
+  Retrieves the latest NUGET versions for the given packages.
+
+  The returned structure indicates the different package versions along with their
+  nuget pkg download URL.
+
+  NOTE: All packages must be available on the same registry.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  packages:
+    description: >
+      Package names.
+      Whitespace-separated list.
+    required: true
+
+outputs:
+  versions:
+    description: the retrieved LATEST versions
+    value: ${{steps.get-latest-versions.outputs.versions}}
+  lower:
+    description: the retrieved LOWER version
+    value: ${{ fromJSON(steps.get-latest-versions.outputs.lower) }}
+  upper:
+    description: the retrieved UPPER version
+    value: ${{ fromJSON(steps.get-latest-versions.outputs.upper) }}
+
+runs:
+  using: composite
+  steps:
+  - id: get-packages-indices
+    name: Get packages indices
+    uses: kagekirin/gha-py-toolbox/actions/nuget/get-packages-indices@main
+    with:
+      registry: ${{inputs.registry}}
+      token: ${{inputs.token}}
+      packages: ${{inputs.packages}}
+  - id: get-latest-versions
+    name: Get latest versions
+    shell: python
+    env:
+      inputs_json: ${{steps.get-packages-indices.outputs.indices}}
+    run: |
+      ## actions/nuget/get-latest-versions/action.yml#get-latest-versions
+      import os, sys, shlex, json
+
+      packages_data = json.loads(str(os.getenv("inputs_json")))
+      upper_versions = dict()
+      lower_versions = dict()
+
+      for package in packages_data.keys():
+          upper_versions[package] = packages_data[package]["items"][0]["upper"]
+          lower_versions[package] = packages_data[package]["items"][0]["lower"]
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"versions={upper_versions}")
+          print(f"versions={upper_versions}", file=fh)
+          print(f"upper={upper_versions}")
+          print(f"upper={upper_versions}", file=fh)
+          print(f"lower={lower_versions}")
+          print(f"lower={lower_versions}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/get-latest-versions/action.yml#verify-outputs
+      steps.get-latest-versions.outputs.versions
+      ${{steps.get-latest-versions.outputs.versions}}
+
+
+      steps.get-packages-indices.outputs.indices
+      ${{steps.get-packages-indices.outputs.indices}}
+      ${{fromJSON(steps.get-packages-indices.outputs.indices)}}
+
+      versions
+      ${{ fromJSON(steps.get-latest-versions.outputs.lower) }}
+      ${{ fromJSON(steps.get-latest-versions.outputs.upper) }}
