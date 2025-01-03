@@ -1,0 +1,164 @@
+name: NUGET get packages indices
+description: >
+  Retrieves the indices (pl. index) for several NUGET packages.
+
+  The returned structure indicates the different package versions along with their
+  nuget pkg download URL.
+
+  NOTE: All packages must be available on the same registry.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  packages:
+    description: >
+      Package names.
+      Whitespace-separated list.
+    required: true
+
+outputs:
+  indices:
+    description: >-
+      JSON string of the packages indices structure (dict).
+      GitHub Actions cannot return objects, hence only the JSON string is possible.
+      To retrieve the object, use $ {{ fromJSON(steps.this-step.outputs.index) }}.
+      fromJSON(fromJSON()) is the correct way to retrieve the object
+
+      The `fromJSON` below transforms the escaped string into an unescaped one.
+    value: ${{fromJSON(steps.get-packages-indices.outputs.indices)}}
+  base-url:
+    description: first encountered value for "RegistrationsBaseUrl"
+    value: ${{steps.get-packages-indices.outputs.base_url}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: get-packages-indices
+    name: Get packages indices
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+      inputs_packages: ${{inputs.packages}}
+    run: |
+      ## actions/nuget/get-packages-indices/action.yml#get-packages-indices
+      import os, sys, shlex, json, pprint, requests
+      from urllib.parse import urlparse, urljoin
+
+      session = requests.Session()
+
+      registry_url = str(os.getenv("inputs_registry"))
+      assert urlparse(registry_url) is not None
+      if not registry_url.endswith("/"):
+          registry_url = registry_url + "/"
+      print(f"registry_url: {registry_url}")
+      assert urlparse(registry_url) is not None
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      print(f"token: {token}")
+      if token and token != "":
+          session.headers["Authorization"] = f"Bearer {token}"
+
+
+      index_url = urljoin(registry_url, "index.json")
+      assert urlparse(index_url) is not None
+      print(f"fetching {index_url}")
+
+      index_response = session.get(index_url)
+      assert index_response is not None
+      print(index_response.status_code, index_response.reason)
+      assert index_response.ok
+
+      index_data = index_response.json()
+      assert index_data is not None
+      pprint.pp(index_data)
+
+      ## retrieve 'RegistrationsBaseUrl' from resources
+      resources = index_data["resources"]
+      assert resources is not None
+      pprint.pp(resources)
+
+      base_url = list(
+          filter(
+              lambda item: item["@type"].startswith("RegistrationsBaseUrl"),
+              resources,
+          )
+      )[0]["@id"]
+      assert urlparse(base_url) is not None
+      print(f"base_url: {base_url}")
+      if not base_url.endswith("/"):
+          base_url = f"{base_url}/"
+      assert urlparse(base_url) is not None
+
+      packages = str(os.getenv("inputs_packages")).split()
+      packages_data = dict()
+      for package_name in packages:
+          print(f"package_name: {package_name}")
+          assert package_name is not None
+          assert len(package_name)
+
+          package_url = urljoin(base_url, f"{package_name}/index.json")
+          assert urlparse(package_url) is not None
+          print(f"fetching {package_url}")
+
+          package_response = session.get(package_url)
+          assert package_response is not None
+          print(package_response.status_code, package_response.reason)
+          assert package_response.ok
+
+          package_data = package_response.json()
+          assert package_data is not None
+          pprint.pp(package_data)
+          packages_data[package_name] = package_data
+
+      """
+        encode: `json.dumps(json.dumps())` for escaped JSON string
+          double JSON encoding transforms the raw JSON string
+          into an escaped JSON string,
+          which can be easily written to GITHUB_OUTPUT.
+
+        decode: `json.loads(json.loads())` for object from escaped JSON string
+        - to retrieve the unescaped string, we use can `json.loads()`
+          or rather the GitHub Actions expression `fromJSON()`
+        - to retrieve the actual object, we can use `json.loads()` twice, i.e. `json.loads(json.loads())`
+          or rather the GitHub Actions expression `fromJSON()` twice, i.e. `fromJSON(fromJSON())`
+      """
+
+      packages_json_escaped = json.dumps(json.dumps(packages_data, sort_keys=True))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"indices={packages_json_escaped}")
+          print(f"indices={packages_json_escaped}", file=fh)
+          print(f"base_url={base_url}")
+          print(f"base_url={base_url}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/get-packages-indices/action.yml#verify-outputs
+      steps.get-packages-indices.outputs.indices
+      ${{steps.get-packages-indices.outputs.indices}}
+      fromJSON ${{fromJSON(steps.get-packages-indices.outputs.indices)}}
+      fromJSON(fromJSON) ${{fromJSON(fromJSON(steps.get-packages-indices.outputs.indices))}}
+
+      ===========================================
+
+      steps.get-packages-indices.outputs.base_url
+      ${{steps.get-packages-indices.outputs.base_url}}
