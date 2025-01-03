@@ -1,0 +1,179 @@
+name: DOTNET get packages versions
+description: >
+  Retrieves and filters the packages referenced by a given project or props file.
+
+  Returns a JSON string of a dictionary mapping package name to its version.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  registry:
+    description: >
+      Registry URL to filter by packageSource **if** nuget.config exists.
+      Ignored if it doesn't and everything is handled using nuget.org as sole registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  package-regex:
+    description: >
+      Whitespace-separated list.
+    required: true
+  package-xpath:
+    description: >
+      XPath expression to locate package entries.
+      WARNING: Defaults to <PackageVersion/> elements as used by Build.Packages.props.
+    required: true
+    default: //PackageVersion
+  configuration-files:
+    description: >
+      Configuration file (props or csproj) to check for packages.
+      Defaults to Build.Packages.props.
+    required: false
+    default: Build.Packages.props
+  nuget-configuration-file:
+    description: >
+      NuGet Configuration file (NuGet.config) to check for registry mapping.
+      Defaults to NuGet.config.
+    required: false
+    default: NuGet.config
+
+outputs:
+  packages:
+    description: JSON string of dictionary mapping the retrieved packages to their respective versions
+    value: ${{ fromJSON(steps.get-package-versions.outputs.packages) }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: get-package-versions
+    name: Get package versions
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_registry: ${{ inputs.registry }}
+      inputs_package_regex: ${{ inputs.package-regex }}
+      inputs_package_xpath: ${{ inputs.package-xpath }}
+      inputs_configuration_files: ${{ inputs.configuration-files }}
+      inputs_nuget_configuration_file: ${{ inputs.nuget-configuration-file }}
+    run: |
+      ## actions/dotnet/get-packages-versions/action.yml#get-package-versions
+      import os, sys, shlex, re, json, pprint, itertools
+      from pathlib import Path
+      from contextlib import chdir
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      parser = etree.XMLParser(remove_blank_text=True)
+
+      xpath = str(os.getenv("inputs_package_xpath", "//PackageVersion"))
+      assert xpath is not None
+
+      configuration_files = str(os.getenv("inputs_configuration_files")).split()
+      assert configuration_files is not None
+
+      registry = str(
+          os.getenv("inputs_registry", "https://api.nuget.org/v3/index.json")
+      )
+      assert registry is not None
+
+      packages = dict()
+      with chdir(os.getenv("inputs_path", ".")):
+          for project_config in itertools.chain.from_iterable(
+              [Path(".").rglob(f) for f in configuration_files]
+          ):
+              print(project_config)
+              assert project_config.is_file()
+
+              root = etree.parse(project_config, parser).getroot()
+              for node in root.xpath(xpath):
+                  package_name = node.attrib["Include"]
+                  package_version = node.attrib["Version"]
+                  if package_name not in packages:
+                      packages[package_name] = package_version
+
+
+      print("packages, before filtering:")
+      pprint.pp(packages)
+
+      nuget_config = Path(os.getenv("inputs_nuget_configuration_file"))
+      print(nuget_config)
+      if nuget_config.is_file():
+          package_patterns = []
+          nuget_root = etree.parse(nuget_config, parser).getroot()
+          packageSources = dict(
+              map(
+                  lambda node: (node.attrib["key"], node.attrib["value"]),
+                  nuget_root.xpath("/configuration/packageSources/add"),
+              )
+          )
+          mapping = dict(
+              map(
+                  lambda key: (
+                      packageSources[key],
+                      list(
+                          map(
+                              lambda p: p.attrib["pattern"],
+                              nuget_root.xpath(
+                                  f"/configuration/packageSourceMapping/packageSource[@key='{key}']/package[@pattern]"
+                              ),
+                          )
+                      ),
+                  ),
+                  packageSources.keys(),
+              )
+          )
+          pprint.pp(mapping)
+          if registry in mapping:
+              package_patterns.extend(
+                  map(
+                      lambda p: p.replace(".", "\\.")
+                      .replace("?", ".")
+                      .replace("*", ".*"),
+                      mapping[registry],
+                  )
+              )
+
+          packages = {
+              k: v
+              for (k, v) in packages.items()
+              if any([re.match(p, k) for p in package_patterns])
+          }
+          print("packages, after nuget filtering:")
+          pprint.pp(packages)
+
+      package_regex = str(os.getenv("inputs_package_regex", "")).split()
+      if package_regex and len(package_regex):
+          packages = {
+              k: v
+              for (k, v) in packages.items()
+              if any([re.match(p, k) for p in package_regex])
+          }
+          print("packages, after regex filtering:")
+          pprint.pp(packages)
+
+      packages_json_escaped = json.dumps(json.dumps(packages, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={packages_json_escaped}")
+          print(f"packages={packages_json_escaped}", file=fh)
+
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/dotnet/get-packages-versions/action.yml#verify-outputs
+      steps.get-package-versions.outputs.packages
+      ${{steps.get-package-versions.outputs.packages}}
+
+      steps.get-package-versions.outputs.packages
+      ${{steps.get-package-versions.outputs.packages}}
+      ${{fromJSON(steps.get-package-versions.outputs.packages)}}
