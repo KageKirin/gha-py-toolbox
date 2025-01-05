@@ -1,0 +1,144 @@
+name: NUGET get package versions
+description: >
+  Retrieves a list of available versions for a single NUGET package.
+  The returned struct is a list of the versions.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  package:
+    description: >
+      Package name
+    required: true
+
+outputs:
+  versions:
+    description: >-
+      String of a JSON array containing the versions.
+    value: ${{fromJSON(steps.get-package-versions.outputs.indices)}}
+  base-url:
+    description: first encountered value for "PackageBaseAddress"
+    value: ${{ steps.get-package-versions.outputs.base_url }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: get-package-versions
+    name: Get package versions
+    shell: python
+    env:
+      inputs_registry: ${{inputs.registry}}
+      inputs_token: ${{inputs.token}}
+      inputs_package: ${{inputs.package}}
+    run: |
+      ## actions/nuget/get-package-versions/action.yml#get-package-versions
+      import os, sys, shlex, json, pprint, requests
+      from urllib.parse import urlparse, urljoin
+
+      session = requests.Session()
+
+      registry_url = str(os.getenv("inputs_registry"))
+      assert urlparse(registry_url) is not None
+      if not registry_url.endswith("/"):
+          registry_url = registry_url + "/"
+      print(f"registry_url: {registry_url}")
+      assert urlparse(registry_url) is not None
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      print(f"token: {token}")
+      if token and len(token) > 0:
+          session.headers["Authorization"] = f"Bearer {token}"
+          session.headers["X-NuGet-ApiKey"] = token
+      session.headers["X-NuGet-Protocol-Version"] = "4.1.0"
+      pprint.pp(session.headers)
+
+      index_url = urljoin(registry_url, "index.json")
+      assert urlparse(index_url) is not None
+      print(f"fetching {index_url}")
+
+      index_response = session.get(index_url)
+      assert index_response is not None
+      print(index_response.status_code, index_response.reason)
+      assert index_response.ok
+
+      index_data = index_response.json()
+      assert index_data is not None
+      pprint.pp(index_data)
+      print(json.dumps(index_data, indent=2))
+
+      ## retrieve 'PackageBaseAddress' from resources
+      resources = index_data["resources"]
+      assert resources is not None
+      pprint.pp(resources)
+
+      base_url = list(
+          filter(
+              lambda item: item["@type"].startswith("PackageBaseAddress"),
+              resources,
+          )
+      )[0]["@id"]
+      assert urlparse(base_url) is not None
+      print(f"base_url: {base_url}")
+      if not base_url.endswith("/"):
+          base_url = f"{base_url}/"
+      assert urlparse(base_url) is not None
+
+      package_name = str(os.getenv("inputs_package"))
+      print(f"package_name: {package_name}")
+      assert package_name is not None
+      assert len(package_name)
+
+      package_url = urljoin(base_url, f"{package_name.lower()}/index.json")
+      assert urlparse(package_url) is not None
+      print(f"fetching {package_url}")
+
+      package_response = session.get(package_url)
+      assert package_response is not None
+      print(package_response.status_code, package_response.reason)
+      assert package_response.ok
+
+      package_data = package_response.json()
+      assert package_data is not None
+      pprint.pp(package_data)
+
+      versions_json_escaped = json.dumps(
+          json.dumps(package_data["versions"], sort_keys=True)
+      )
+      print(versions_json_escaped)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"versions={versions_json_escaped}")
+          print(f"versions={versions_json_escaped}", file=fh)
+          print(f"base_url={base_url}")
+          print(f"base_url={base_url}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/get-package-versions/action.yml#verify-outputs
+      steps.get-package-versions.outputs.versions
+      ${{steps.get-package-versions.outputs.versions}}
+      fromJSON ${{fromJSON(steps.get-package-versions.outputs.versions)}}
+      fromJSON(fromJSON) ${{fromJSON(fromJSON(steps.get-package-versions.outputs.versions))}}
+
+      ===========================================
+
+      steps.get-package-versions.outputs.base_url
+      ${{steps.get-package-versions.outputs.base_url}}
