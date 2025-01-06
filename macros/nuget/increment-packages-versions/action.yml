@@ -1,0 +1,96 @@
+name: NUGET increment packages versions
+description: >
+  Retrieves and filters the packages referenced by a given project or props file.
+
+  Returns a JSON string of a dictionary mapping package name to its version.
+
+inputs:
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  packages:
+    description: >
+      JSON dictionary mapping packages to their current version.
+      e.g.
+      ```json
+      {
+        "foobar": "1.2.3",
+        "hoge": "4.5.6"
+      }
+      ```
+    required: true
+  method:
+    description: >
+      Increment method: `increment` to go to the next higher version or `latest`.
+    type: choice
+    options:
+    - increment
+    - latest
+    required: true
+
+outputs:
+  packages:
+    description: dictionary mapping the retrieved packages to their respective incremented versions
+    value: ${{ fromJSON(steps.increment-package-versions.outputs.packages) }}
+
+runs:
+  using: composite
+  steps:
+  - id: split-package-names
+    name: Split package names
+    shell: python
+    env:
+      inputs_packages: ${{ inputs.packages }}
+    # split keys (package names) from the input dict
+    run: |
+      ## macros/nuget/increment-packages-versions/action.yml#split-package-names
+      import os, json, pprint
+
+      packages_json = str(os.getenv("inputs_packages"))
+      print(packages_json)
+      assert packages_json is not None
+      packages = json.loads(packages_json)
+      if not packages:
+          packages = dict()
+      pprint.pp(packages)
+
+      package_names = [k for k in packages.keys()]
+      pprint.pp(package_names)
+      packages_json_escaped = json.dumps(json.dumps(package_names, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={packages_json_escaped}")
+          print(f"packages={packages_json_escaped}", file=fh)
+
+  - id: nuget-packages-versions
+    name: Get package index for each package
+    uses: kagekirin/gha-py-toolbox/actions/nuget/get-packages-versions@main
+    with:
+      token: ${{ inputs.token }}
+      registry: ${{ inputs.registry }}
+      packages: ${{ join(fromJSON(fromJSON(steps.split-package-names.outputs.packages)), ' ') }}
+
+  - id: increment-package-versions
+    name: Increment package versions
+    uses: kagekirin/gha-py-toolbox/actions/semver/increment-packages-versions@main
+    with:
+      packages: ${{ inputs.packages }}
+      versions: ${{ steps.nuget-packages-versions.outputs.packages }}
+      method: ${{ inputs.method }}
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## macros/nuget/increment-packages-versions/action.yml#verify-outputs
+      steps.increment-package-versions.outputs.packages
+      ${{steps.increment-package-versions.outputs.packages}}
+      ${{fromJSON(steps.increment-package-versions.outputs.packages)}}
