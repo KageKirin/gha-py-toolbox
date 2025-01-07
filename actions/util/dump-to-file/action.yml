@@ -1,0 +1,37 @@
+name: UTIL Dump to file
+description: >
+  Dump a given string to a given file, overwriting its contents if it already exists.
+
+inputs:
+  path:
+    description: base path from where to run the action
+    required: true
+    default: ${{github.workspace}}
+  contents:
+    description: string contents to dump
+    required: true
+  file:
+    description: filename to dump above contents to
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - id: dump-to-file
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_contents: ${{inputs.contents}}
+      inputs_file: ${{inputs.file}}
+    run: |
+      ## actions/util/dump-to-file/action.yml#dump-to-file
+      import os
+      from contextlib import chdir
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(os.getenv("inputs_path", ".")):
+          contents = str(os.getenv("inputs_contents", ""))
+          file = Path(os.getenv("inputs_file", ""))
+          file.write_text(contents)
