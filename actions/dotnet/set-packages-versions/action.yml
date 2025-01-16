@@ -1,0 +1,185 @@
+name: DOTNET set packages versions
+description: >
+  Sets the package versions referenced by a given project or props file.
+
+  Input is a JSON string of a dictionary mapping package name to its version to update.
+  Returns a JSON string of a dictionary mapping package name to its updated version.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  packages:
+    description: >
+      JSON string of a dictionary mapping package name to its version.
+
+      e.g. json
+      ```json
+      {
+        "System.Text.Json": "8.0.5"
+      }
+      ```
+
+      as such, the input string
+      ```json
+      "{\"System.Text.Json\":\"8.0.5\"}"
+      ```
+    required: true
+  package-xpath:
+    description: >
+      XPath expression to locate package entries.
+      WARNING: Defaults to <PackageVersion/> elements as used by Build.Packages.props.
+    required: true
+    default: //PackageVersion
+  configuration-files:
+    description: >
+      Configuration file (props or csproj) to check for packages.
+      Defaults to Build.Packages.props.
+    required: false
+    default: Build.Packages.props
+
+outputs:
+  packages:
+    description: dictionary mapping the retrieved packages to their respective versions
+    value: ${{ fromJSON(steps.set-package-versions.outputs.packages) }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: set-package-versions
+    name: Set package versions
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_packages: ${{ inputs.packages }}
+      inputs_package_xpath: ${{ inputs.package-xpath }}
+      inputs_configuration_files: ${{ inputs.configuration-files }}
+    run: |
+      ## actions/dotnet/set-packages-versions/action.yml#set-package-versions
+      import os, sys, shlex, re, json, pprint, itertools
+      from pathlib import Path
+      from contextlib import chdir
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+
+      def find_matching_nodes(xpath: str, root, packagename: str):
+          return [
+              node
+              for node in root.xpath(xpath)
+              if node.attrib["Include"].lower() == packagename.lower()
+          ]
+
+
+      parser = etree.XMLParser(
+          remove_blank_text=False,  #!< don't modify whitespace
+          remove_comments=False,
+          remove_pis=False,
+          strip_cdata=False,
+      )
+
+      packages_str = str(os.getenv("inputs_packages", "{}"))
+      assert packages_str is not None
+      print(packages_str)
+      packages = json.loads(packages_str)
+      if not packages:
+          packages = dict()
+      pprint.pp(packages)
+
+      configuration_files = str(os.getenv("inputs_configuration_files")).split()
+      assert configuration_files is not None
+
+      updated_packages = dict()
+      with chdir(os.getenv("inputs_path", ".")):
+          for project_config in itertools.chain.from_iterable(
+              [Path(".").rglob(f) for f in configuration_files]
+          ):
+              print(project_config)
+              assert project_config.is_file()
+              has_xml_declaration = project_config.read_text().startswith("<?xml")
+
+              xpath = str(os.getenv("inputs_package_xpath", "//PackageVersion"))
+              assert xpath is not None
+
+              root = etree.parse(project_config, parser).getroot()
+
+              for package in packages.keys():
+                  nodes = find_matching_nodes(
+                      xpath=xpath, root=root, packagename=package
+                  )
+                  for node in nodes:
+                      # print(node.attrib["Include"], node.attrib["Version"])
+                      node.attrib["Version"] = packages[package]
+                      updated_packages[package] = packages[package]
+
+              tree = etree.ElementTree(root)
+              project_xml = (
+                  (
+                      etree.tostring(
+                          root,
+                          encoding=tree.docinfo.encoding,
+                          standalone=tree.docinfo.standalone,
+                          xml_declaration=True,
+                      )
+                      if has_xml_declaration
+                      else etree.tostring(root)
+                  )
+                  .decode(encoding="utf-8")
+                  .replace('"/>', '" />')
+              )
+              print(project_xml)
+              project_config.write_text(project_xml)
+
+      pprint.pp(updated_packages)
+
+      packages_json_escaped = json.dumps(json.dumps(updated_packages, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={packages_json_escaped}")
+          print(f"packages={packages_json_escaped}", file=fh)
+
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/dotnet/set-packages-versions/action.yml#verify-outputs
+      steps.set-package-versions.outputs.packages
+      ${{steps.set-package-versions.outputs.packages}}
+
+      steps.set-package-versions.outputs.packages
+      ${{steps.set-package-versions.outputs.packages}}
+      ${{fromJSON(steps.set-package-versions.outputs.packages)}}
+
+
+  - id: verify-modifications
+    name: Verify modified files
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_configuration_files: ${{ inputs.configuration-files }}
+    run: |
+      ## actions/dotnet/set-packages-versions/action.yml#verify-modifications
+      import os, itertools
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      configuration_files = str(os.getenv("inputs_configuration_files")).split()
+      assert configuration_files is not None
+
+      for project_config in itertools.chain.from_iterable(
+          [Path(".").rglob(f) for f in configuration_files]
+      ):
+          print(f"====== {project_config} ======")
+          assert project_config.is_file()
+          print(project_config.read_text())
+          print(f"====== /{project_config} ======\n\n")
