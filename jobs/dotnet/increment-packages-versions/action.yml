@@ -1,0 +1,136 @@
+name: DOTNET increment packages versions
+description: >
+  Performs the following steps:
+
+  1. Retrieves packages from configuration file (Build.Packages.props or .csproj)
+     that match a given filter expression.
+  2. For each filter package, retrieves the next-incremental/latest version
+     from a given NuGet registry.
+  3. Updates the configuration file (see above) with the update versions.
+  4. Split changes into line-by-line patches and commit them
+  5. PR creation NOT IMPLEMENTED HERE: create PR in calling action/workflow
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  nuget-token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  nuget-registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+
+  package-regex:
+    description: >
+      Whitespace-separated list.
+    required: true
+
+  package-xpath:
+    description: >
+      XPath expression to locate package entries.
+      WARNING: Defaults to <PackageVersion/> elements as used by Build.Packages.props.
+    required: true
+    default: //PackageVersion
+
+  configuration-files:
+    description: >
+      Configuration files (props or csproj) to check for packages.
+      Defaults to Build.Packages.props.
+    required: false
+    default: Build.Packages.props
+  nuget-configuration-file:
+    description: >
+      NuGet Configuration file (NuGet.config) to check for registry mapping.
+      Defaults to NuGet.config.
+    required: false
+    default: NuGet.config
+
+  method:
+    description: >
+      Increment method: `increment` to go to the next higher version or `latest`.
+    type: choice
+    options:
+    - increment
+    - latest
+    required: true
+
+  ## Committer
+  commit-username:
+    description: >
+      Author user.name to use.
+      Defaults to triggering_actor
+    required: false
+    default: ${{ github.workflow }} on behalf of ${{ github.triggering_actor }}
+  commit-useremail:
+    description: >
+      Author user.email to use.
+      Defaults actor anonymous email address, `ID+USERNAME@users.noreply.github.com`
+    required: false
+    default: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+
+  ## Commit message
+  commit-message:
+    description: >
+      Subject to write into patch header
+      Pystache template, getting fed {'package': 'foobar', 'value': '1.2.3'} from created from inputs.packages
+    required: false
+    default: ''
+
+  dry-run:
+    description: >
+      Whether to actually push the changes and create a pullrequest.
+    required: true
+    default: 'true'
+
+
+runs:
+  using: composite
+  steps:
+  - id: get-package-versions
+    name: Get package versions for input package names
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/get-packages-versions@main
+    with:
+      path: ${{ inputs.path }}
+      registry: ${{ inputs.nuget-registry }}
+      package-regex: ${{ inputs.package-regex }}
+      package-xpath: ${{ inputs.package-xpath }}
+      configuration-files: ${{ inputs.configuration-files }}
+      nuget-configuration-file: ${{ inputs.nuget-configuration-file }}
+
+  - id: increment-package-versions
+    name: Increment versions for filtered packages
+    uses: kagekirin/gha-py-toolbox/macros/nuget/increment-packages-versions@main
+    with:
+      token: ${{ inputs.nuget-token }}
+      registry: ${{ inputs.nuget-registry }}
+      method: ${{ inputs.method }}
+      packages: ${{ steps.get-package-versions.outputs.packages }}
+
+  - id: set-packages-versions
+    name: Set updated package version for each package
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/set-packages-versions@main
+    with:
+      path: ${{ inputs.path }}
+      package-xpath: ${{ inputs.package-xpath }}
+      configuration-files: ${{ inputs.configuration-files }}
+      packages: ${{ steps.increment-package-versions.outputs.packages }}
+
+  - id: commit-packages-versions
+    name: Set updated package version for each package
+    uses: kagekirin/gha-py-toolbox/macros/dotnet/commit-packages-versions@main
+    with:
+      path: ${{ inputs.path }}
+      package-xpath: ${{ inputs.package-xpath }}
+      configuration-files: ${{ inputs.configuration-files }}
+      packages: ${{ steps.increment-package-versions.outputs.packages }}
+      commit-username: ${{ inputs.commit-username }}
+      commit-useremail: ${{ inputs.commit-useremail }}
+      commit-message: ${{ inputs.commit-message }}
