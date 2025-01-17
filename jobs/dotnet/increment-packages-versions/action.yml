@@ -1,0 +1,99 @@
+name: DOTNET increment packages versions
+description: >
+  Performs the following steps:
+
+  1. Retrieves packages from configuration file (Build.Packages.props or .csproj)
+     that match a given filter expression.
+  2. For each filter package, retrieves the next-incremental/latest version
+     from a given NuGet registry.
+  3. Updates the configuration file (see above) with the update versions.
+  4. NOT IMPLEMENTED YET: line by line add and commit the changes, in order to have 1 commit per change.
+  5. NOT IMPLEMENTED YET: create PR
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  nuget-token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+      Defaults to empty string for nuget.org.
+    required: false
+    default: ''
+  nuget-registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3/index.json
+
+  package-regex:
+    description: >
+      Space-separated list.
+    required: true
+
+  package-xpath:
+    description: >
+      XPath expression to locate package entries.
+      WARNING: Defaults to <PackageVersion/> elements as used by Build.Packages.props.
+    required: true
+    default: //PackageVersion
+
+  configuration-file:
+    description: >
+      Configuration file (props or csproj) to check for packages.
+      Defaults to Build.Packages.props.
+    required: false
+    default: Build.Packages.props
+
+  method:
+    description: >
+      Increment method: `increment` to go to the next higher version or `latest`.
+    type: choice
+    options:
+    - increment
+    - latest
+    required: true
+
+  dry-run:
+    description: >
+      Whether to actually push the changes and create a pullrequest.
+    required: true
+    default: 'true'
+
+
+runs:
+  using: composite
+  steps:
+  - id: get-package-versions
+    name: Get package versions for input package names
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/get-packages-versions@main
+    with:
+      path: ${{ inputs.path }}
+      registry: ${{ inputs.nuget-registry }}
+      package-regex: ${{ inputs.package-regex }}
+      package-xpath: ${{ inputs.package-xpath }}
+      configuration-file: ${{ inputs.configuration-file }}
+
+  - id: increment-package-versions
+    name: Increment versions for filtered packages
+    uses: kagekirin/gha-py-toolbox/actions/nuget/increment-packages-versions@main
+    with:
+      path: ${{ inputs.path }}
+      token: ${{ inputs.nuget-token }}
+      registry: ${{ inputs.nuget-registry }}
+      method: ${{ inputs.method }}
+      packages: ${{ steps.get-package-versions.outputs.packages }}
+
+  - id: set-packages-versions
+    name: Set updated package version for each package
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/set-packages-versions@main
+    with:
+      path: ${{ inputs.path }}
+      package-xpath: ${{ inputs.package-xpath }}
+      configuration-file: ${{ inputs.configuration-file }}
+      packages: ${{ steps.increment-package-versions.outputs.packages }}
+
+  # TODO: steps 4 and 5: commits, PR
+  # for 5 if: ${{ inputs.dry-run == 'false' }}
