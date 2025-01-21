@@ -1,0 +1,191 @@
+name: GIT commit patches
+description: >
+  Apply and commit a series of patches.
+  Basically `git am`, but patches are provided as JSON-array.
+
+  Patches are provided as a string of a JSON-array
+  where each item contains the full patch string.
+
+  Returns the commit hashes.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  patches:
+    description: >
+      String containing JSON-array of the patches.
+      NOTE: commit message will be extracted from the patch header,
+      unless provided
+    required: true
+    default: '[]'
+
+
+  ## Committer
+  commit-username:
+    description: >
+      Author user.name to use.
+      Defaults to triggering_actor
+    required: false
+    default: ${{ github.workflow }} on behalf of ${{ github.triggering_actor }}
+  commit-useremail:
+    description: >
+      Author user.email to use.
+      Defaults actor anonymous email address, `ID+USERNAME@users.noreply.github.com`
+    required: false
+    default: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+
+  ## Commit message
+  commit-message:
+    description: >
+      Commit message to be used instead of the one provided by the patch header.
+      Empty string (default) equates to using the patch `Subject` line.
+    required: false
+    default: ''
+
+outputs:
+  commits:
+    description: Whitespace-separated list of created commits
+    value: ${{ join(fromJSON(steps.commit-patches.outputs.commits), '    ') }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+        patch
+
+  - id: commit-patches
+    name: Commit patches
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_patches: ${{ inputs.patches }}
+      inputs_commit_username: ${{ inputs.commit-username }}
+      inputs_commit_useremail: ${{ inputs.commit-useremail }}
+      inputs_commit_message: ${{ inputs.commit-message }}
+    run: |
+      ## actions/git/commit-patches/action.yml#commit-patches
+      import os, sys, re, json, pprint
+      from pathlib import Path
+      import pygit2
+      import patch as patchpy
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      patches_str = str(os.getenv("inputs_patches"))
+      assert patches_str is not None
+      patches = json.loads(patches_str)
+      assert patches is not None
+      pprint.pp(patches)
+
+      commit_username = str(os.getenv("inputs_commit_username"))
+      assert commit_username is not None
+
+      commit_useremail = str(os.getenv("inputs_commit_useremail"))
+      assert commit_useremail is not None
+
+      commit_message = str(os.getenv("inputs_commit_message", ""))
+
+      commits = []
+      with chdir(str(os.getenv("inputs_path", "."))):
+          repo = pygit2.Repository(".")
+          index = repo.index
+
+          author = (
+              repo.default_signature
+              if ("user.name" in repo.config and "user.email" in repo.config)
+              else pygit2.Signature(commit_username, commit_useremail)
+          )
+          assert author is not None
+
+          for patch in patches:
+              if not patch:
+                  continue
+
+              diff = index.diff_to_workdir(
+                  flags=0, context_lines=0, interhunk_lines=1
+              )
+              if diff:
+                  repo.stash(author)  ## better be safe
+              print("applying patch:\n", "\r" + patch)
+
+              patch_message = commit_message
+              if not patch_message:
+                  patch_message_match = re.search(
+                      r"Subject:\s\[PATCH\]\s(?P<message>.*[^\n])\n", patch
+                  )
+                  patch_message_data = patch_message_match.groupdict()
+                  patch_message = patch_message_data["message"]
+              print(f"patch_message: '{patch_message}'")
+
+              ## try to apply with pygit2 first
+              pd = pygit2.Diff.parse_diff(patch)
+              if pd and repo.applies(pd, location=pygit2.GIT_APPLY_LOCATION_BOTH):
+                  print("applying patch though pygit2")
+                  repo.apply(pd, location=pygit2.GIT_APPLY_LOCATION_BOTH)
+
+              else:  ## fallback 1: patch.py --- doesn't work, kept as reference for later tries
+                  # ps = patchpy.fromstring(patch)
+                  # if ps:
+                  #    print("[fallback 1] applying patch through patch.py")
+                  #    ps.apply()
+                  # else:
+                  print("[fallback 2] applying patch through patch(1)")
+                  patchfile = Path("temp.patch")
+                  patchfile.write_text(patch)
+                  os.system(f"cat {patchfile}")
+                  cmd = f"patch -p1 < {patchfile}"
+                  os.system(cmd)
+                  patchfile.unlink()
+
+              if pd:
+                  for p in pd:
+                      index.add(p.delta.old_file.path)
+                      index.add(p.delta.new_file.path)
+              else:
+                  old_file_match = re.search(
+                      r"\-\-\-\s+a/(?P<filename>.*[^\n])\n", patch
+                  )
+                  new_file_match = re.search(
+                      r"\+\+\+\s+b/(?P<filename>.*[^\n])\n", patch
+                  )
+                  old_file = old_file_match.groupdict()["filename"]
+                  new_file = new_file_match.groupdict()["filename"]
+                  index.add(old_file)
+                  index.add(new_file)
+
+              index.write()
+              commit = repo.create_commit(
+                  repo.head.name,
+                  author,
+                  author,
+                  patch_message,
+                  index.write_tree(),
+                  [repo.head.target],
+              )
+              commits.append(commit)
+
+      pprint.pp(commits)
+      commit_hashes = [repo[c].short_id for c in commits]
+      json_escaped = json.dumps(json.dumps(commit_hashes, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"commits={json_escaped}")
+          print(f"commits={json_escaped}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/git/commit-patches/action.yml#verify-outputs
+      steps.commit-patches.outputs.commits
+      ${{steps.commit-patches.outputs.commits}}
+      ${{fromJSON(steps.commit-patches.outputs.commits)}}
