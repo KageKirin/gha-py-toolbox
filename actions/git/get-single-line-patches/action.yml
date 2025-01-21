@@ -1,0 +1,319 @@
+name: GIT get single line patches
+description: >
+  Splits a set of modified files into a series of single line patches
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  files:
+    description: >
+      Whitespace-separated list of local file paths
+      NOTE: files that do not present a difference against the repo index are ignored
+    required: true
+    default: ''
+  regex-lines:
+    description: >
+      Whitespace-separated list of regular expressions to match against the modified lines
+    required: true
+    default: ''
+
+  ## Patch header
+  patch-author:
+    description: Author to write into patch header
+    required: false
+    default: ''
+  patch-subject:
+    description: >
+      Subject to write into patch header
+      Pystache template, getting fed the groupdict() from the matching regex-lines (+ 'filename')
+    required: false
+    default: ''
+
+outputs:
+  patches:
+    description: The created single line patches
+    value: ${{ fromJSON(steps.get-line-patches.outputs.patches) }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+        pystache
+
+  - id: get-line-patches
+    name: Get line patches
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_files: ${{ inputs.files }}
+      inputs_regex_lines: ${{ inputs.regex-lines }}
+      inputs_patch_author: ${{ inputs.patch-author }}
+      inputs_patch_subject: ${{ inputs.patch-subject }}
+    run: |
+      ## actions/git/get-single-line-patches/action.yml#get-line-patches
+      import os, sys, re, io, json, pprint
+      from pathlib import Path
+      import pygit2
+      import pystache
+      import html
+      import datetime
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      ###=== functions
+
+
+      def show_diff(diff: pygit2.Diff):
+          """_summary_
+          Args:
+              diff (pygit2.Diff): Diff object obtained from
+              ```python
+              repo = pygit2.Repository('.')
+              diff = repo.index.diff_to_workdir(flags=0, context_lines=0, interhunk_lines=1)
+              ```
+          """
+
+          print("Diff object:", diff)
+          print("Diff patch:\n", "\r" + diff.patch)
+
+          # Iterate patches in diff
+          for patch in diff:
+              # Patch object
+              print("Patch object:", patch)
+              print("DiffDelta object:", patch.delta)
+              print("DiffDelta.status:", patch.delta.status)
+              print("DiffDelta.is_binary:", patch.delta.is_binary)
+              print("DiffDelta.nfiles:", patch.delta.nfiles)
+              print(
+                  "DiffDelta.old_file:",
+                  patch.delta.old_file,
+                  patch.delta.old_file.path,
+              )
+              print(
+                  "DiffDelta.new_file:",
+                  patch.delta.new_file,
+                  patch.delta.new_file.path,
+              )
+
+              if not patch.delta.is_binary:
+                  # raw patch string, decoded to string
+                  print(
+                      "decoded Patch data (text only):\n",
+                      "\r" + patch.data.decode("utf-8"),
+                  )
+
+              for hunk in patch.hunks:
+                  # Hunk object
+                  print("DiffHunk object:", hunk)
+                  print("DiffHunk.header:", hunk.header)
+                  print("DiffHunk.lines:", hunk.lines)
+                  print("DiffHunk.new_lines:", hunk.new_lines)
+                  print("DiffHunk.new_start:", hunk.new_start)
+                  print("DiffHunk.old_lines:", hunk.old_lines)
+                  print("DiffHunk.old_start:", hunk.old_start)
+
+                  old_lines = hunk.lines[0 : hunk.old_lines]
+                  new_lines = hunk.lines[
+                      hunk.old_lines : hunk.old_lines + hunk.new_lines
+                  ]
+                  for line in old_lines:
+                      print("-", line, line.content)
+                  for line in new_lines:
+                      print("+", line, line.content)
+
+
+      ###=== globals
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+      print("path:", path)
+
+      files = str(os.getenv("inputs_files")).split()
+      assert files is not None
+      print("files:", files)
+
+      regex_lines = str(os.getenv("inputs_regex_lines")).split()
+      assert regex_lines is not None
+      print("regex_lines:", regex_lines)
+
+      patch_author = str(os.getenv("inputs_patch_author"))
+      assert patch_author is not None
+      print("patch_author:", patch_author)
+
+      patch_subject = str(os.getenv("inputs_patch_subject"))
+      assert patch_subject is not None
+      print("patch_subject:", patch_subject)
+      patch_subject_template = pystache.parse(patch_subject)
+
+      ###=== implementation
+
+      patches = []
+
+      with chdir(str(os.getenv("inputs_path", "."))):
+          repo = pygit2.Repository(".")
+          index = repo.index
+          diff = index.diff_to_workdir(flags=0, context_lines=0, interhunk_lines=1)
+          show_diff(diff)
+
+          for filename in files:
+              print(f"creating patches for '{filename}'")
+
+              for patch in diff:
+                  assert not patch.delta.is_binary
+                  if patch.delta.old_file.path != filename:
+                      continue
+                  if patch.delta.new_file.path != filename:
+                      continue
+
+                  for hunk in patch.hunks:
+                      old_lines = hunk.lines[0 : hunk.old_lines]
+                      new_lines = hunk.lines[
+                          hunk.old_lines : hunk.old_lines + hunk.new_lines
+                      ]
+
+                      for regex_line in regex_lines:
+                          print(f"creating patch for regex '{regex_line}'")
+                          re_line = re.compile(regex_line)
+                          assert re_line is not None
+                          print("re_line:", re_line)
+
+                          for line in old_lines:
+                              print(
+                                  line.content.strip(),
+                                  re_line,
+                                  re_line.search(line.content),
+                                  re_line.search(line.content.strip()),
+                                  re_line.match(line.content),
+                                  re_line.match(line.content.strip()),
+                              )
+
+                          for line in new_lines:
+                              print(
+                                  line.content.strip(),
+                                  re_line,
+                                  re_line.search(line.content),
+                                  re_line.search(line.content.strip()),
+                                  re_line.match(line.content),
+                                  re_line.match(line.content.strip()),
+                              )
+
+                          matching_old_lines_indices = [
+                              old_lines.index(line)
+                              for line in old_lines
+                              if re_line.search(line.content)
+                              or re_line.search(line.content.strip())
+                          ]
+                          matching_new_lines_indices = [
+                              new_lines.index(line)
+                              for line in new_lines
+                              if re_line.search(line.content)
+                              or re_line.search(line.content.strip())
+                          ]
+
+                          print(
+                              "matching old lines (indices):",
+                              matching_old_lines_indices,
+                          )
+                          print(
+                              "matching new lines (indices):",
+                              matching_new_lines_indices,
+                          )
+
+                          if len(matching_old_lines_indices) != 1:
+                              continue
+                          if len(matching_new_lines_indices) != 1:
+                              continue
+
+                          old_length = len(matching_old_lines_indices)
+                          old_start = hunk.old_start + matching_old_lines_indices[0]
+                          new_length = len(matching_new_lines_indices)
+                          new_start = hunk.new_start + matching_new_lines_indices[0]
+
+                          line_match = re_line.search(
+                              new_lines[matching_new_lines_indices[0]].content
+                          )
+                          line_data = line_match.groupdict() if line_match else {}
+                          line_data["filename"] = filename
+                          print("line_data:", line_data)
+                          commit_subject = html.unescape(
+                              pystache.render(patch_subject_template, line_data)
+                          )
+                          commit_date = datetime.datetime.now().strftime(
+                              "%a, %d %b %Y %X %z"
+                          )  # yields e.g.: Mon, 20 Jan 2025 13:57:18 +0900
+
+                          ### printing patch/diff file
+                          with io.StringIO() as linepatch:
+                              print(f"From: {patch_author}", file=linepatch)
+                              print(f"Date: {commit_date}", file=linepatch)
+                              print(
+                                  f"Subject: [PATCH] {commit_subject}", file=linepatch
+                              )
+                              print("\n---", file=linepatch)
+                              print(f"{filename} | 2 +-", file=linepatch)
+                              print(
+                                  f"1 file changed, {new_length} insertion(+), {old_length} deletion(-)",
+                                  file=linepatch,
+                              )
+                              print("", file=linepatch)
+                              print(
+                                  f"diff --git a/{patch.delta.old_file.path} b/{patch.delta.new_file.path}",
+                                  file=linepatch,
+                              )
+                              # print(index 67823ed..a8e9024 100644) #<< origin of hashes? can be ignored
+                              print(
+                                  f"--- a/{patch.delta.old_file.path}", file=linepatch
+                              )
+                              print(
+                                  f"+++ b/{patch.delta.new_file.path}", file=linepatch
+                              )
+                              print(
+                                  f"@@ -{old_start},{old_length} +{new_start},{new_length} @@",
+                                  file=linepatch,
+                              )
+                              for line_idx in matching_old_lines_indices:
+                                  print(
+                                      f"-{old_lines[line_idx].content.rstrip()}",
+                                      file=linepatch,
+                                  )
+                              for line_idx in matching_new_lines_indices:
+                                  print(
+                                      f"+{new_lines[line_idx].content.rstrip()}",
+                                      file=linepatch,
+                                  )
+                              patches.append(str(linepatch.getvalue()))
+      print(patches)
+
+      """
+        encode: `json.dumps(json.dumps())` for escaped JSON string
+          double JSON encoding transforms the raw JSON string
+          into an escaped JSON string,
+          which can be easily written to GITHUB_OUTPUT.
+
+        decode: `json.loads(json.loads())` for object from escaped JSON string
+        - to retrieve the unescaped string, we use can `json.loads()`
+          or rather the GitHub Actions expression `fromJSON()`
+        - to retrieve the actual object, we can use `json.loads()` twice, i.e. `json.loads(json.loads())`
+          or rather the GitHub Actions expression `fromJSON()` twice, i.e. `fromJSON(fromJSON())`
+      """
+
+      json_escaped = json.dumps(json.dumps(patches, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"patches={json_escaped}")
+          print(f"patches={json_escaped}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/git/get-single-line-patches/action.yml#verify-outputs
+      steps.get-line-patches.outputs.patches
+      ${{steps.get-line-patches.outputs.patches}}
+      ${{fromJSON(steps.get-line-patches.outputs.patches)}}
