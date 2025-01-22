@@ -1,0 +1,176 @@
+name: DOTNET commit packages versions
+description: >
+  Commits updated packages versions by performs the following steps:
+  1. split the modified file (e.g. Directory.Packages.props) into a series of single-line-patches.
+  2. commit those patches.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  package-xpath:
+    description: >
+      XPath expression to locate package entries.
+      WARNING: Defaults to <PackageVersion/> elements as used by Build.Packages.props.
+    required: true
+    default: //PackageVersion
+  configuration-files:
+    description: >
+      Configuration files (props or csproj) to check for packages.
+      Defaults to Build.Packages.props.
+    required: false
+    default: Build.Packages.props
+
+  packages:
+    description: JSON string of dictionary mapping the retrieved packages to their respective versions
+    required: true
+    default: '{}'
+
+  ## Committer
+  commit-username:
+    description: >
+      Author user.name to use.
+      Defaults to triggering_actor
+    required: false
+    default: ${{ github.workflow }} on behalf of ${{ github.triggering_actor }}
+  commit-useremail:
+    description: >
+      Author user.email to use.
+      Defaults actor anonymous email address, `ID+USERNAME@users.noreply.github.com`
+    required: false
+    default: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+
+  ## Commit message
+  commit-message:
+    description: >
+      Subject to write into patch header
+      Pystache template, getting fed {'filename': 'props', 'package': 'foobar', 'version': '1.2.3'} from created from inputs.packages
+    required: false
+    default: '{{filename}}: {{package}} v{{version}}'
+
+outputs:
+  patches:
+    description: >
+      String containing JSON-array of the patches.
+      NOTE: commit message will be extracted from the patch header,
+      unless provided
+    value: ${{ steps.create-patches.outputs.patches }}
+  commits:
+    description: Whitespace-separated list of created commits
+    value: ${{ steps.commit-patches.outputs.commits }}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: prepare-patch-regex
+    name: Prepare patch regex
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_packages: ${{ inputs.packages }}
+      inputs_package_xpath: ${{ inputs.package-xpath }}
+      inputs_configuration_files: ${{ inputs.configuration-files }}
+    run: |
+      ## macros/dotnet/commit-packages-versions/action.yml#prepare-patch-regex
+      import os, sys, shlex, re, json, pprint, itertools
+      from pathlib import Path
+      from contextlib import chdir
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+
+      def find_matching_nodes(xpath: str, root, packagename: str):
+          return [
+              node
+              for node in root.xpath(xpath)
+              if node.attrib["Include"].lower() == packagename.lower()
+          ]
+
+
+      parser = etree.XMLParser(
+          remove_blank_text=True,
+          remove_comments=True,
+          remove_pis=True,
+          strip_cdata=True,
+      )
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      inputs_packages = str(os.getenv("inputs_packages", "{}"))
+      assert inputs_packages is not None
+      packages = json.loads(inputs_packages)
+      assert packages is not None
+      pprint.pp(packages)
+
+      configuration_files = str(os.getenv("inputs_configuration_files")).split()
+      assert configuration_files is not None
+
+      xpath = str(os.getenv("inputs_package_xpath", "//PackageVersion"))
+      assert xpath is not None
+
+      regexes = []
+      with chdir(path):
+          for project_config in itertools.chain.from_iterable(
+              [Path(".").rglob(f) for f in configuration_files]
+          ):
+              print(project_config)
+              assert project_config.is_file()
+
+              root = etree.parse(project_config, parser).getroot()
+
+              for package in packages.keys():
+                  nodes = find_matching_nodes(
+                      xpath=xpath, root=root, packagename=package
+                  )
+                  if len(nodes) == 0:
+                      print("no match for", package)
+                  for node in nodes:
+                      regex = rf'(?P<element>{node.tag})\s+Include="(?P<package>{node.attrib["Include"]})"\s+Version="(?P<version>[\w\.\+\-]+)"'
+                      print(f"regex for {package}:", regex)
+                      if not regex in regexes:
+                          regexes.append(regex)
+
+      pprint.pp(regexes)
+      json_escaped = json.dumps(json.dumps(regexes, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"regexes={json_escaped}")
+          print(f"regexes={json_escaped}", file=fh)
+
+
+  - id: verify-intermediate-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## macros/dotnet/commit-packages-versions/action.yml#verify-intermediate-outputs
+      steps.prepare-patch-regex.outputs.regexes
+      ${{steps.prepare-patch-regex.outputs.regexes}}
+      ${{fromJSON(steps.prepare-patch-regex.outputs.regexes)}}
+      ${{ join(fromJSON(fromJSON(steps.prepare-patch-regex.outputs.regexes)), '    ') }}
+
+
+  - id: create-patches
+    uses: kagekirin/gha-py-toolbox/actions/git/get-single-line-patches@main
+    with:
+      path: ${{ inputs.path }}
+      regex-lines: ${{ join(fromJSON(fromJSON(steps.prepare-patch-regex.outputs.regexes)), '  ') }}
+      patch-author: ${{ inputs.commit-username }} <${{ inputs.commit-useremail }}>
+      patch-subject: ${{ inputs.commit-message }}
+      files: ${{ inputs.configuration-files }}
+
+  - id: commit-patches
+    uses: kagekirin/gha-py-toolbox/actions/git/commit-patches@main
+    with:
+      path: ${{ inputs.path }}
+      patches: ${{ steps.create-patches.outputs.patches }}
+      commit-username: ${{ inputs.commit-username }}
+      commit-useremail: ${{ inputs.commit-useremail }}
