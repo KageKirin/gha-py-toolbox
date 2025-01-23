@@ -1,0 +1,137 @@
+name: GH configure git user
+description: >
+  Sets up the local git user (`git config --local user.name/email`)
+  for the executing GH actor.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: .
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: true
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with "user:read" permissions for the given repository.
+    required: true
+    default: ${{github.token}}
+  actor:
+    description: Executing GitHub actor
+    required: true
+    default: ${{ github.triggering_actor }}
+  actor-id:
+    description: Executing GitHub actor ID
+    required: true
+    default: ${{ github.actor_id }}
+
+outputs:
+  user:
+    description: The configured user in `User Name <user@email.com>` format
+    value: ${{ steps.get-actor-info.outputs.name }} <${{ steps.get-actor-info.outputs.email }}>
+  username:
+    description: The configured user name
+    value: ${{ steps.get-actor-info.outputs.name }}
+  useremail:
+    description: The configured user email
+    value: ${{ steps.get-actor-info.outputs.email }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+        pygit2
+
+  - id: get-actor-info
+    name: Get actor info
+    shell: python
+    env:
+      inputs_api_url: ${{ inputs.api-url }}
+      inputs_token: ${{ inputs.token }}
+      inputs_actor: ${{ inputs.actor }}
+      inputs_actor_id: ${{ inputs.actor-id }}
+    run: |
+      ## actions/gh/config-git-user/action.yml#get-actor-info
+      import os, sys, re, pprint, itertools
+      from github import Github
+      from github import Auth
+
+      token = os.getenv("inputs_token")
+      if not token:
+          token = os.getenv("GITHUB_TOKEN")
+      assert token is not None
+      assert token
+
+      api_url = os.getenv("inputs_api_url")
+      assert api_url is not None
+      print(api_url)
+
+      inputs_actor = os.getenv("inputs_actor")
+      inputs_actor_id = os.getenv("inputs_actor_id")
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+
+      actor = None
+      if inputs_actor:
+          print("retrieving actor from name", inputs_actor)
+          actor = gh.get_user(inputs_actor)
+      elif inputs_actor_id:
+          print("retrieving actor from id", inputs_actor_id)
+          actor = gh.get_user_by_id(int(inputs_actor_id))
+      else:
+          actor = gh.get_user()
+
+      print(actor)
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"id={actor.id}")
+          print(f"id={actor.id}", file=fh)
+          print(f"name={actor.name}")
+          print(f"name={actor.name}", file=fh)
+          print(f"email={actor.email}")
+          print(f"email={actor.email}", file=fh)
+
+  - id: config-local-user
+    name: Configure local user
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_name: ${{ steps.get-actor-info.outputs.name }}
+      inputs_email: ${{ steps.get-actor-info.outputs.email }}
+    run: |
+      ## actions/gh/config-git-user/action.yml#config-local-user
+      import os
+      import pygit2
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      inputs_name = os.getenv("inputs_name")
+      assert inputs_name is not None
+
+      inputs_email = os.getenv("inputs_email")
+      assert inputs_email is not None
+
+      with chdir(path):
+          repo = pygit2.Repository(".")
+
+          author = pygit2.Signature(inputs_name, inputs_email)
+          assert author is not None
+
+          repo.config["user.name"] = inputs_name
+          repo.config["user.email"] = inputs_email
+
+          default_author = repo.default_signature
+          assert default_author is not None
+
+          assert author.name == default_author.name
+          assert author.email == default_author.email
