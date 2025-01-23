@@ -1,0 +1,108 @@
+name: GIT has changes
+description: >
+  Check current git branch for commits,
+  i.e. changes vis-à-vis a reference branch (remote or local).
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  branch:
+    description: name of branch to check
+    required: true
+  reference:
+    description: name of reference branch to check against
+    required: false
+    default: ${{ github.ref_name }}
+
+outputs:
+  commits:
+    description: Whitespace-separated list of commits
+    value: ${{ steps.has-changes.outputs.commits }}
+  count:
+    description: Number of commits
+    value: ${{ steps.has-changes.outputs.count }}
+  has-changes:
+    description: True if there are indeed commits
+    value: ${{ steps.has-changes.outputs.has_changes }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+
+  - id: has-changes
+    name: Check for changes
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_branch: ${{ inputs.branch }}
+      inputs_reference: ${{ inputs.reference }}
+    run: |
+      ## actions/git/has-changes/action.yml#has-changes
+      import os, pprint
+      from pathlib import Path
+      import pygit2
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      inputs_branch = str(os.getenv("inputs_branch")).replace("refs/heads/", "")
+      assert inputs_branch is not None
+
+      inputs_reference = str(os.getenv("inputs_reference")).replace("refs/heads/", "")
+      assert inputs_reference is not None
+
+      with chdir(str(os.getenv(path, "."))):
+          repo = pygit2.Repository(".")
+          index = repo.index
+
+          branch = repo.branches.get(inputs_branch)
+          assert branch is not None
+
+          reference = repo.branches.get(inputs_reference)
+          assert reference is not None
+
+          print("branch:", branch.name, branch.target)
+          print("reference:", reference.name, reference.target)
+
+          commits = []
+          walker = repo.walk(branch.target)
+          walker.simplify_first_parent()
+          for commit in walker:
+              if commit.id == reference.target:
+                  break
+              commits.append(commit)
+              print(commit)
+              print(commit.short_id, commit.id, commit.message)
+
+          commits_list = " ".join([c.short_id for c in commits])
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"commits={commits_list}")
+              print(f"commits={commits_list}", file=fh)
+              print(f"count={len(commits)}")
+              print(f"count={len(commits)}", file=fh)
+              print(f"has_changes={str(len(commits) > 0).lower()}")
+              print(f"has_changes={str(len(commits) > 0).lower()}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/git/has-changes/action.yml#verify-outputs
+      steps.has-changes.outputs.commits
+      ${{steps.has-changes.outputs.commits}}
+
+      steps.has-changes.outputs.count
+      ${{steps.has-changes.outputs.count}}
+
+      steps.has-changes.outputs.has_changes
+      ${{steps.has-changes.outputs.has_changes}}
