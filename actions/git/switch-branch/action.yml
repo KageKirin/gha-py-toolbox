@@ -1,0 +1,104 @@
+name: GIT switch branch
+description: >
+  Change current git branch (optionally creating a new one).
+  Equivalent of `git checkout [-b] <branch>`.
+  Returns the name and HEAD of the checked out branch.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  branch:
+    description: name of branch to switch to
+    required: true
+  base:
+    description: name of base to branch from (default is current branch)
+    required: false
+    default: ${{ github.ref_name }}
+  create:
+    description: create branch if it does not exist
+    required: false
+    default: false
+
+outputs:
+  branch:
+    description: Name of checked out branch
+    value: ${{ steps.switch-branch.outputs.branch }}
+  head:
+    description: Head commit of checked out branch
+    value: ${{ steps.switch-branch.outputs.head }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+
+  - id: switch-branch
+    name: Commit patches
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_branch: ${{ inputs.branch }}
+      inputs_base: ${{ inputs.base }}
+      inputs_create: ${{ inputs.create }}
+    run: |
+      ## actions/git/switch-branch/action.yml#switch-branch
+      import os, pprint
+      from pathlib import Path
+      import pygit2
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      branch = str(os.getenv("inputs_branch"))
+      assert branch is not None
+
+      base = str(os.getenv("inputs_base"))
+      assert base is not None
+
+      create = str(os.getenv("inputs_create", "false"))
+      assert create is not None
+
+      with chdir(str(os.getenv(path, "."))):
+          repo = pygit2.Repository(".")
+          index = repo.index
+
+          print("HEAD:", repo.head.shorthand)
+          current_branch = repo.branches[repo.head.shorthand]
+          print(current_branch)
+          print(
+              f"{repo.branches[repo.head.shorthand].shorthand} is_checked_out:",
+              current_branch.is_checked_out(),
+          )
+
+          if repo.branches.get(branch):
+              print(f"branch '{branch}' exists")
+          else:
+              print(f"branch '{branch}' DOES NOT exist")
+
+          if not repo.branches.get(branch) and create == "true":
+              lb = repo.branches.local.create(branch, repo[repo.head.target])
+              print("created branch:", lb.name)
+
+          if repo.branches.get(branch) is not None:
+              repo.checkout(repo.branches.get(branch).name)
+          print(f"{branch} is checked out", repo.head.shorthand == branch)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"shorthand={repo.head.shorthand}")
+              print(f"shorthand={repo.head.shorthand}", file=fh)
+              print(f"branch={repo.head.name}")
+              print(f"branch={repo.head.name}", file=fh)
+              print(f"commit={str(repo.head.target)}")
+              print(f"commit={str(repo.head.target)}", file=fh)
+
+          ## set exit code to error if checkout failed
+          exit(0 if repo.head.shorthand == branch else 1)
