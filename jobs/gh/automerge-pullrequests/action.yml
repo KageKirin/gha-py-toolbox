@@ -1,0 +1,59 @@
+name: GH automatically merge pull requests
+description: >
+  Automatically merges pull requests _labeled_ as such.
+
+  Performs the following tasks:
+  1. add (required) labels: automerge, priority, ordered
+  2. retrieve pull requests labeled as 'automerge'
+  3. sieve through the pull requests to find the next mergeable PR
+  4. merge the next mergeable PR
+
+inputs:
+
+outputs:
+
+
+runs:
+  using: composite
+  steps:
+
+  ## add required labels
+  - id: add-label-automerge
+    uses: kagekirin/gha-py-toolbox/actions/gh/add-label@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      label: automerge
+      description: This PR shall be merged automatically.
+  - id: add-label-priority
+    uses: kagekirin/gha-py-toolbox/actions/gh/add-label@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      label: priority
+      description: If labeled as automerge, this PR shall be automatically merged in priority.
+  - id: add-label-ordered
+    uses: kagekirin/gha-py-toolbox/actions/gh/add-label@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      label: ordered
+      description: If labeled as automerge, this PR shall be automatically merged in ASCENDANT order of PR number.
+
+  ## sieve through PRs
+  - id: get-pull-requests
+    name: Get pull requests
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/get-pullrequests@main
+    with:
+      repository: ${{ inputs.repository }}
+      graphql-url: ${{ inputs.graphql-url }}
+      token: ${{ inputs.token }}
+      filter-labels: automerge
+
+  - shell: cat {0}
+    run: |
+      steps.get-pull-requests.outputs.pullrequests
+      ${{ steps.get-pull-requests.outputs.pullrequests }}
