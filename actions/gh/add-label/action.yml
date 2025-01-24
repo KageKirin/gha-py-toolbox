@@ -1,0 +1,128 @@
+name: GH add label
+description: >
+  Adds the given label to the repo (after checking for duplicate).
+  Returns label URL.
+
+inputs:
+  label:
+    description: Label name
+    required: true
+  color:
+    description: Label color (defaults to random color if left empty).
+    required: false
+    default: ''
+  description:
+    description: Label description.
+    required: false
+    default: ''
+
+  ## standard GH(E) access variables
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+outputs:
+  #label-id:
+  #  description: Label ID
+  #  value: ${{ steps.add-label.outputs.label_id }}
+  label-url:
+    description: Label URL
+    value: ${{ steps.add-label.outputs.label_url }}
+  label:
+    description: Label JSON data
+    value: ${{ steps.add-label.outputs.label }}
+  created:
+    description: Whether this label was actually created (false if it already existed)
+    value: ${{ steps.add-label.outputs.created }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: add-label
+    name: Add label
+    shell: python
+    env:
+      inputs_repository: ${{ inputs.repository }}
+      inputs_api_url: ${{ inputs.api-url }}
+      inputs_token: ${{ inputs.token }}
+      inputs_label: ${{ inputs.label }}
+      inputs_color: ${{ inputs.color }}
+      inputs_description: ${{ inputs.description }}
+    run: |
+      ## actions/gh/add-label/action.yml#add-label
+      import os, sys, re, json, pprint
+      import random
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+
+      inputs_label = str(os.getenv("inputs_label"))
+      assert inputs_label is not None
+
+      inputs_color = str(os.getenv("inputs_color", ""))
+      assert inputs_color is not None
+      if not inputs_color:
+          inputs_color = hex(random.randrange(0, 2**24))[2:]
+          # inputs_color = f"{hex(random.randrange(0, 256))[2:]}{hex(random.randrange(0, 256))[2:]}{hex(random.randrange(0, 256))[2:]}"
+
+      inputs_description = str(os.getenv("inputs_description", ""))
+      assert inputs_description is not None
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      labels = repo.get_labels()
+      pprint.pp([l for l in labels])
+      # pprint.pp([(l.id, l.name, l.description, l.color) for l in labels])
+
+      labels_dict = dict(zip([l.name for l in labels], [l for l in labels]))
+      pprint.pp(labels_dict)
+
+      label = None
+      created = False
+      if inputs_label in labels_dict.keys():
+          label = labels_dict[inputs_label]
+          created = False
+      else:
+          label = repo.create_label(
+              name=inputs_label, description=inputs_description, color=inputs_color
+          )
+          created = True
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          # print(f"label_id={label.id}")
+          # print(f"label_id={label.id}", file=fh)
+          print(f"label_url={label.url}")
+          print(f"label_url={label.url}", file=fh)
+          print(f"label={label.raw_data}")
+          print(f"label={label.raw_data}", file=fh)
+          print(f"created={created}".lower())
+          print(f"created={created}".lower(), file=fh)
