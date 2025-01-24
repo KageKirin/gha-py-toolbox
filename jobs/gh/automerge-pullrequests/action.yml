@@ -1,0 +1,314 @@
+name: GH automatically merge pull requests
+description: >
+  Automatically merges pull requests _labeled_ as such.
+
+  Performs the following tasks:
+  1. add (required) labels: automerge, priority, ordered
+  2. retrieve pull requests labeled as 'automerge'
+  3. sieve through the pull requests to find the next mergeable PR
+  4. merge the next mergeable PR
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  automerge-label:
+    description: label to be used for enabled automerge
+    required: false
+    default: automerge
+  ordered-label:
+    description: label to be used for enabled ordered automerge
+    required: false
+    default: ordered
+  priority-label:
+    description: label to be used for enabled priority automerge
+    required: false
+    default: priority
+
+  merge-title:
+    description: >
+      Pystache template for the commit title of the merge/squash commit resulting
+      from merging this pull request.
+      Defaults to the title of the pull request.
+
+      Available fields are:
+      - merge_method
+      - title, body, number, etc, i.e. all the fields exposed by the REST API
+        @see: https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
+    required: true
+    default: '{{title}}'
+  merge-body:
+    description: >
+      Pystache template for the commit body for the merge/squash commit resulting
+      from merging this pull request.
+      Defaults to the body (1st message) of the pull request.
+
+      Available fields are:
+      - merge_method
+      - title, body, number, etc, i.e. all the fields exposed by the REST API
+        @see: https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
+    required: true
+    default: '{{body}}'
+
+  merge-method:
+    description: >
+      Pull Request Merge Method
+
+      Represents available types of methods to use when merging a pull request.
+      MERGE: Add all commits from the head branch to the base branch with a merge
+      commit.
+      REBASE: Add all commits from the head branch onto the base branch individually.
+      SQUASH: Combine all commits from the head branch into a single commit in the
+      base branch.
+    type: choice
+    options:
+    - MERGE
+    - REBASE
+    - SQUASH
+    required: true
+
+  merge-author:
+    description: >
+      Email of the person to be held responsible for the merge.
+    required: true
+
+  use-automerge-queue:
+    description: if true, use the automerge queue instead of direct merging
+    required: false
+    default: 'false'
+
+  dry-run:
+    description: if true, do not perform actual merge
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+
+  ## add required labels
+  - id: add-label-automerge
+    uses: kagekirin/gha-py-toolbox/actions/gh/add-label@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      label: ${{ inputs.automerge-label }}
+      description: This PR shall be merged automatically.
+  - id: add-label-priority
+    uses: kagekirin/gha-py-toolbox/actions/gh/add-label@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      label: ${{ inputs.priority-label }}
+      description: If labeled as `priority`, this PR shall be automatically merged in priority.
+  - id: add-label-ordered
+    uses: kagekirin/gha-py-toolbox/actions/gh/add-label@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      label: ${{ inputs.ordered-label }}
+      description: If labeled as `ordered`, this PR shall be automatically merged in ASCENDANT order of PR number.
+
+  ## sieve through PRs
+  - id: get-pullrequests
+    name: Get pull requests
+    uses: kagekirin/gha-py-toolbox/actions/gh/get-pullrequests@main
+    with:
+      repository: ${{ inputs.repository }}
+      graphql-url: ${{ inputs.graphql-url }}
+      token: ${{ inputs.token }}
+      filter-labels: ${{ inputs.automerge-label }}
+
+  - id: verify-intermediate-results
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## jobs/gh/automerge-pullrequests/action.yml#verify-intermediate-results
+      steps.get-pullrequests.outputs.ids
+      ${{steps.get-pullrequests.outputs.ids}}
+
+      steps.get-pullrequests.outputs.numbers
+      ${{steps.get-pullrequests.outputs.numbers}}
+
+      steps.get-pullrequests.outputs.branches
+      ${{steps.get-pullrequests.outputs.branches}}
+
+      steps.get-pullrequests.outputs.shas
+      ${{steps.get-pullrequests.outputs.shas}}
+
+      steps.get-pullrequests.outputs.base-branches
+      ${{steps.get-pullrequests.outputs.base-branches}}
+
+      steps.get-pullrequests.outputs.base-shas
+      ${{steps.get-pullrequests.outputs.base-shas}}
+
+      steps.get-pullrequests.outputs.count
+      ${{steps.get-pullrequests.outputs.count}}
+
+      steps.get-pullrequests.outputs.pullrequests
+      ${{steps.get-pullrequests.outputs.pullrequests}}
+
+
+  ## retrieve info for base branches (usually only 'main')
+  - id: get-base-branches
+    name: Get base branch information
+    uses: kagekirin/gha-py-toolbox/actions/gh/get-branches@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      filter-branch: ${{ steps.get-pullrequests.outputs.base-branches }}
+
+
+  - name: Verify intermediate data
+    shell: cat {0}
+    run: |
+      ## jobs/gh/automerge-pullrequests/action.yml#
+      steps.get-base-branches.outputs.shas
+      ${{ steps.get-base-branches.outputs.shas }}
+
+      steps.get-base-branches.outputs.branches
+      ${{ steps.get-base-branches.outputs.branches }}
+
+
+  - id: get-mergeable-pr
+    name: Get next mergeable PR
+    uses: kagekirin/gha-py-toolbox/actions/gh/get-next-pullrequest-merge-candidate@main
+    with:
+      pullrequests: ${{ steps.get-pullrequests.outputs.pullrequests }}
+      base-branches: ${{ steps.get-base-branches.outputs.branches }}
+      automerge-label: ${{ inputs.automerge-label }}
+      ordered-label: ${{ inputs.ordered-label }}
+      priority-label: ${{ inputs.priority-label }}
+
+  - name: Verify intermediate data
+    shell: cat {0}
+    run: |
+      ## jobs/gh/automerge-pullrequests/action.yml#
+      steps.get-mergeable-pr.outputs.number
+      ${{ steps.get-mergeable-pr.outputs.number }}
+
+      steps.get-mergeable-pr.outputs.branch
+      ${{ steps.get-mergeable-pr.outputs.branch }}
+
+      steps.get-mergeable-pr.outputs.state
+      ${{ steps.get-mergeable-pr.outputs.state }}
+
+      steps.get-mergeable-pr.outputs.draft
+      ${{ steps.get-mergeable-pr.outputs.draft }}
+
+      steps.get-mergeable-pr.outputs.merged
+      ${{ steps.get-mergeable-pr.outputs.merged }}
+
+      steps.get-mergeable-pr.outputs.auto_merge
+      ${{ steps.get-mergeable-pr.outputs.auto_merge }}
+
+      steps.get-mergeable-pr.outputs.mergeable
+      ${{ steps.get-mergeable-pr.outputs.mergeable }}
+
+      steps.get-mergeable-pr.outputs.mergeable-state
+      ${{ steps.get-mergeable-state-pr.outputs.mergeable }}
+
+      steps.get-mergeable-pr.outputs.is-latest-base
+      ${{ steps.get-mergeable-pr.outputs.is-latest-base }}
+
+      steps.get-mergeable-pr.outputs.can-automerge
+      ${{ steps.get-mergeable-pr.outputs.can-automerge }}
+
+  - id: here-be-merge
+    if: ${{ steps.get-mergeable-pr.outputs.number > 0 && fromJSON(steps.get-mergeable-pr.outputs.can-automerge) && fromJSON(steps.get-mergeable-pr.outputs.is-latest-base) && !fromJSON(inputs.use-automerge-queue) }}
+    name: Merge here
+    shell: cat {0}
+    run: |
+      ## jobs/gh/automerge-pullrequests/action.yml#here-be-merge
+      ========== MERGING ==========
+      merging PR #${{ steps.get-mergeable-pr.outputs.number }}
+      =============================
+
+      This message is a placeholder for the real action.
+      No PR was harmed.
+
+  - id: here-be-automerge
+    if: ${{ steps.get-mergeable-pr.outputs.number > 0 && fromJSON(steps.get-mergeable-pr.outputs.can-automerge) && fromJSON(steps.get-mergeable-pr.outputs.is-latest-base) && fromJSON(inputs.use-automerge-queue) }}
+    name: Automerge here
+    shell: cat {0}
+    run: |
+      ## jobs/gh/automerge-pullrequests/action.yml#here-be-automerge
+      ========== MERGING ==========
+      adding PR #${{ steps.get-mergeable-pr.outputs.number }} to automerge queue
+      =============================
+
+      This message is a placeholder for the real action.
+      No PR was harmed.
+
+
+  - id: merge-pullrequest
+    if: ${{ steps.get-mergeable-pr.outputs.number > 0 && fromJSON(steps.get-mergeable-pr.outputs.can-automerge) && fromJSON(steps.get-mergeable-pr.outputs.is-latest-base) && !fromJSON(inputs.use-automerge-queue) }}
+    name: Merge pullrequest
+    uses: kagekirin/gha-py-toolbox/actions/gh/merge-pullrequest@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      pullrequest: ${{ steps.get-mergeable-pr.outputs.number }}
+      title: ${{ inputs.merge-title }}
+      body: ${{ inputs.merge-body }}
+      method: ${{ inputs.merge-method }}
+      dry-run: ${{ inputs.dry-run }}
+
+  - id: merge-pullrequest-via-automerge-queue
+    if: ${{ steps.get-mergeable-pr.outputs.number > 0 && fromJSON(steps.get-mergeable-pr.outputs.can-automerge) && fromJSON(steps.get-mergeable-pr.outputs.is-latest-base) && fromJSON(inputs.use-automerge-queue) }}
+    name: Merge pullrequest via automerge queue
+    uses: kagekirin/gha-py-toolbox/actions/gh/toggle-automerge@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      pullrequest: ${{ steps.get-mergeable-pr.outputs.number }}
+      toggle: true
+      author: ${{ inputs.merge-author }}
+      title: ${{ inputs.merge-title }}
+      body: ${{ inputs.merge-body }}
+      method: ${{ inputs.merge-method }}
+      dry-run: ${{ inputs.dry-run }}
+
+
+  ## additionally, we could update the candidate PR if it isn't up to latest base
+  - id: here-be-update
+    if: ${{ fromJSON(steps.get-mergeable-pr.outputs.is-latest-base) }}
+    name: Merge here
+    shell: cat {0}
+    run: |
+      ## jobs/gh/automerge-pullrequests/action.yml#here-be-update
+      ${{ !steps.get-mergeable-pr.outputs.is-latest-base }}
+      ========== UPDATING ==========
+      updating PR #${{ steps.get-mergeable-pr.outputs.number }} before merge
+      =============================
+
+      This message is a placeholder for the real action.
+      No PR was harmed.
