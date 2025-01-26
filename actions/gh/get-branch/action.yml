@@ -1,0 +1,95 @@
+name: GH get branch
+description: >
+  Retrieves a given (remote) branch.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  branch:
+    description: >
+      The BRANCH (aka head ref name) to query.
+    required: false
+
+outputs:
+  sha:
+    description: >
+      The branch's head Oid.
+    value: ${{ steps.get-branch.outputs.sha }}
+  branch:
+    description: >
+      The branch's JSON data
+    value: ${{ fromJSON(steps.get-branch.outputs.branch) }}
+
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: get-branch
+    name: Get branch
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+      inputs_branch: ${{inputs.branch}}
+    run: |
+      ## actions/gh/get-branch/action.yml#get-branch
+      import os, sys, re, json, pprint
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+
+      branch_name = str(os.getenv("inputs_branch"))
+      assert branch_name is not None
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      branch_data = None
+
+      branch = repo.get_branch(branch=branch_name)
+      assert branch is not None
+      branch_data = branch.raw_data
+      pprint.pp(branch_data)
+
+      if branch_data is None:
+          raise RuntimeError("unable to retrieve any branch")
+
+      branch_json = json.dumps(json.dumps(branch.raw_data))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"sha={branch.commit.sha}")
+          print(f"sha={branch.commit.sha}", file=fh)
+          print(f"branch={branch_json}")
+          print(f"branch={branch_json}", file=fh)
