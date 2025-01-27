@@ -1,0 +1,121 @@
+name: GH add labels
+description: >
+  Adds the given labels to the repo (after checking for duplicates).
+  Returns label URL.
+
+inputs:
+  labels:
+    description: >
+      JSON dict mapping label name to color and description.
+      `{ "label_name": { "color": "F00BA4", "description": "whatever" } }`
+
+      color and description are optional, so minimal data be like:
+      `{ "label_name": {} }`
+
+      Can be an array `["label1", "label2"]
+    required: true
+
+
+  ## standard GH(E) access variables
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+outputs:
+  labels:
+    description: >
+      JSON dict mapping label name to its data (URL, color, etc).
+    value: ${{ steps.add-labels.outputs.labels }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+
+  - id: add-labels
+    name: Add labels
+    shell: python
+    env:
+      inputs_repository: ${{ inputs.repository }}
+      inputs_api_url: ${{ inputs.api-url }}
+      inputs_token: ${{ inputs.token }}
+      inputs_labels: ${{ inputs.labels }}
+    run: |
+      ## actions/gh/add-labels/action.yml#add-labels
+      import os, sys, shlex, re, json, pprint
+      import random
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+      api_url = str(os.getenv("inputs_api_url"))
+      repository = str(os.getenv("inputs_repository"))
+
+      inputs_labels = str(os.getenv("inputs_labels"))
+      assert inputs_labels is not None
+
+      labels_json = json.loads(inputs_labels)
+      assert labels_json is not None
+
+      if type(labels_json) == "array":
+          labels_json = dict(zip([l for l in labels_json], [{} for l in labels_json]))
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      labels = repo.get_labels()
+      pprint.pp([(l.id, l.name, l.description, l.color) for l in labels])
+
+      labels_dict = dict(zip([l.name for l in labels], [l for l in labels]))
+      pprint.pp(labels_dict)
+
+      labels = dict()
+      for label_name in labels_json.keys():
+          created = False
+          if inputs_label in labels_dict.keys():
+              labels[label_name] = labels_dict[inputs_label]
+              labels[label_name]["created"] = False
+          else:
+              labels[label_name] = repo.create_label(
+                  name=inputs_label,
+                  description=(
+                      labels[label_name]["description"]
+                      if "description" in labels[label_name]
+                      else ""
+                  ),
+                  color=(
+                      labels[label_name]["color"]
+                      if "color" in labels[label_name]
+                      else hex(random.randrange(0, 2**24))[2:]
+                  ),
+              )
+              labels[label_name]["created"] = True
+
+      labels_json_encoded = json.dumps(json.dumps(labels))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"labels={labels_json_encoded}")
+          print(f"labels={labels_json_encoded}", file=fh)
