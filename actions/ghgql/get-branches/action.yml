@@ -1,0 +1,201 @@
+name: GH GRAPHQL get branches
+description: >
+  Retrieves all REMOTE branches (Refs) matching a provided filter.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  filter-branch:
+    description: >
+      Filter regular expressions applied on the branch (ref) name.
+      Whitespace-separated
+      Empty (default) means no filter.
+    required: false
+    default: ''
+  filter-oid:
+    description: >
+      Hashes used to filter applied on the branch Oid (sha).
+      Empty (default) means no filter.
+    required: false
+    default: ''
+
+
+outputs:
+  shas:
+    description: >
+      The branches head Oids.
+    value: ${{ steps.get-branches.outputs.shas }}
+  branches:
+    description: >
+      A JSON dict of all the queried branches data.
+    value: ${{ fromJSON(steps.get-branches.outputs.branches) }}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        git+https://github.com/KageKirin/gha-py-toolbox.git@main#subdirectory=pylib/tuniq
+
+  - id: prepare-inputs
+    # TODO: make this a separate action
+    env:
+      inputs_repository: ${{inputs.repository}}
+    shell: python
+    run: |
+      ## actions/ghgql/get-branches/action.yml#prepare-inputs
+      import os
+
+      repository = str(os.getenv("inputs_repository"))
+      (owner, repo) = repository.split("/")
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"owner={owner}")
+          print(f"owner={owner}", file=fh)
+          print(f"repo={repo}")
+          print(f"repo={repo}", file=fh)
+
+  - id: query
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/query@main
+    with:
+      token: ${{inputs.token}}
+      graphql-query: |
+        query($owner: String!, $repo: String!, $count: Int!) {
+          repository(owner: $owner, name: $repo)
+          {
+            id,
+            name,
+            url,
+            allowUpdateBranch,
+            autoMergeAllowed,
+            refs(
+              orderBy: {
+                direction: ASC,
+                field: ALPHABETICAL,
+              },
+              refPrefix: "refs/heads/",
+              first: $count,
+            )
+            {
+              nodes
+              {
+                id
+                name
+                prefix
+                target
+                {
+                  id
+                  oid
+                }
+              }
+            }
+          }
+        }
+      graphql-variables: |
+        {
+          "owner": "${{github.repository_owner}}",
+          "repo":  "${{steps.prepare-inputs.outputs.repo}}",
+          "count": 100
+        }
+
+  - id: get-branches
+    name: Get branches
+    shell: python
+    env:
+      inputs_branches: ${{toJSON(steps.query.outputs.json)}}
+      inputs_filter_branch: ${{inputs.filter-branch}}
+      inputs_filter_oid: ${{inputs.filter-oid}}
+    run: |
+      ## actions/ghgql/get-branches/action.yml#get-branches
+      import os, sys, re, json, pprint
+      import tuniq
+
+      inputs_branches = str(os.getenv("inputs_branches"))
+      print("inputs_branches", inputs_branches)
+      pulls_json = json.loads(json.loads(inputs_branches))
+
+      branches = pulls_json["data"]["repository"]["refs"]["nodes"]
+      pprint.pp(branches)
+
+      filter_branches = tuniq.unique(
+          str(os.getenv("inputs_filter_branch", "")).split()
+      )
+      assert filter_branches is not None
+      print("filter_branches:", filter_branches)
+
+      filter_oids = tuniq.unique(str(os.getenv("inputs_filter_oid", "")).split())
+      assert filter_oids is not None
+      print("filter_oids:", filter_oids)
+
+      filtered_branches = branches
+      pprint.pp(filtered_branches)
+
+      if filter_branches and len(filter_branches):
+          subfiltered_branches = []
+          for filter_branch in [f for f in filter_branches if len(f) > 0]:
+              print(filter_branch)
+              rx = re.compile(filter_branch)
+              print(rx)
+              subfiltered_branches.extend(
+                  [br for br in filtered_branches if rx.search(br["name"])]
+              )
+          filtered_branches = tuniq.unique(subfiltered_branches)
+
+      if filter_oids and len(filter_oids):
+          subfiltered_branches = []
+          for filter_oid in [f for f in filter_oids if len(f) > 0]:
+              rx = re.compile(f"^{filter_oid}")
+              filtered_branches.extend(
+                  [br for br in filtered_branches if rx.match(br["target"]["oid"])]
+              )
+              filtered_branches = tuniq.unique(subfiltered_branches)
+
+      print("filtered_branches:", filtered_branches)
+      branch_data = dict()
+      for branch in filtered_branches:
+          branch_data[branch["name"]] = branch
+
+      pprint.pp(branch_data)
+      if len(branch_data) == 0:
+          raise RuntimeError("unable to retrieve any branch")
+
+      branches_json = json.dumps(json.dumps(branch_data))
+      branch_shas = [branch_data[k]["target"]["oid"] for k in branch_data.keys()]
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"shas={' '.join(branch_shas)}")
+          print(f"shas={' '.join(branch_shas)}", file=fh)
+          print(f"branches={branches_json}")
+          print(f"branches={branches_json}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/ghgql/get-branches/action.yml#verify-outputs
+      steps.get-branches.outputs.shas
+      ${{steps.get-branches.outputs.shas}}
+
+      steps.get-branches.outputs.branches
+      ${{fromJSON(steps.get-branches.outputs.branches)}}
