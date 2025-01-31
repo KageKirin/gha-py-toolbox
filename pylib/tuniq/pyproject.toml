@@ -1,0 +1,12 @@
+[project]
+name = "tuniq"
+description = "implementation of tuniq.unique() for list types"
+version = "2020.0.0"
+requires-python = ">= 3.10"
+
+authors = [
+  {name = "kagekirin", email = "kagekirin@gmail.com"},
+]
+maintainers = [
+  {name = "kagekirin", email = "kagekirin@gmail.com"},
+]
