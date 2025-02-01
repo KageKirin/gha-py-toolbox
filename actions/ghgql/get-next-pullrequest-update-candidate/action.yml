@@ -1,0 +1,214 @@
+name: GH GRAPHQL get next pull request update candidate
+description: >
+  Retrieves the next PR that ought to be updated.
+  Returns the PR number and info about whether it actually requires an update.
+  CAVEAT: outputs MUST still require on more check (GHA Yaml if:) before proceeding with merge.
+  NOTE: The selection process is largely the same as the automerge selection process,
+        albeit with minor differences to avoid updating the same PR multiple times.
+
+
+inputs:
+  pullrequests: # ${{ steps.get-pull-requests.outputs.pullrequests }}
+    description: JSON array retrieved from ghgql/get-pullrequests
+    required: true
+  base-branches: # ${{ steps.get-base-branches.outputs.branches }}
+    description: JSON dict retrieved from ghgql/get-branches
+    required: true
+
+  automerge-label:
+    description: >
+      regular expression to match the PR label for automerge flag
+      note: only automerge PRs will be automatically updated.
+    required: true
+    default: automerge
+  ordered-label:
+    description: >
+      regular expression to match the PR label for ordered flag
+      note: ordered automerge PRs have precedence over regular (without 'ordered' label) ones.
+    required: true
+    default: ordered
+  priority-label:
+    description: >
+      regular expression to match the PR label for priority flag
+      note: order of priority-label
+      1. ordered priority
+      2. priority
+      3. ordered
+      4. none (i.e. automerge only)
+    required: true
+    default: priority
+
+
+outputs:
+  pullrequest:
+    description: Candidate PR JSON data
+    value: ${{ fromJSON(steps.get-next-pr.outputs.pullrequest) }}
+  number:
+    description: Candidate PR number
+    value: ${{ steps.get-next-pr.outputs.number }}
+  branch:
+    description: Candidate PR branch
+    value: ${{ steps.get-next-pr.outputs.branch }}
+  baseOid:
+    description: Candidate PR baseOid, i.e. hash at branching point
+    value: ${{ steps.get-next-pr.outputs.baseOid }}
+  headOid:
+    description: Candidate PR headOid, i.e. hash at branch top
+    value: ${{ steps.get-next-pr.outputs.headOid }}
+  is-latest-base:
+    description: >
+      Whether the candidate PR is up to the latest base_branches.
+      Requires update if not.
+    value: ${{ steps.get-next-pr.outputs.is_latest_base }}
+
+
+
+runs:
+  using: composite
+  steps:
+  - id: get-next-pr
+    name: Get branch
+    shell: python
+    env:
+      inputs_pullrequests: ${{ inputs.pullrequests }}
+      inputs_base_branches: ${{ inputs.base-branches }}
+      inputs_automerge_label: ${{ inputs.automerge-label }} #regex
+      inputs_ordered_label: ${{ inputs.ordered-label }} #regex
+      inputs_priority_label: ${{ inputs.priority-label }} #regex
+    run: |
+      ## actions/ghgql/get-next-pullrequest-update-candidate/action.yml#get-next-pr
+      import os, sys, re, json, pprint, itertools
+      import random
+
+
+      def pr_has_label(pr: dict, label: re.Pattern) -> bool:
+          return any(
+              filter(
+                  lambda l: label.match(l["name"]) is not None, pr["labels"]["nodes"]
+              )
+          )
+
+
+      def pr_sort_by_number(pr: dict) -> int:
+          return pr["number"]
+
+
+      inputs_pullrequests = str(os.getenv("inputs_pullrequests", "[]"))
+      assert inputs_pullrequests is not None
+
+      inputs_base_branches = str(os.getenv("inputs_base_branches", "{}"))
+      assert inputs_base_branches is not None
+
+      inputs_automerge_label = str(os.getenv("inputs_automerge_label", "automerge"))
+      assert inputs_automerge_label is not None
+      automerge_label = re.compile(inputs_automerge_label)
+      assert automerge_label is not None
+
+      inputs_ordered_label = str(os.getenv("inputs_ordered_label", "ordered"))
+      assert inputs_ordered_label is not None
+      ordered_label = re.compile(inputs_ordered_label)
+      assert ordered_label is not None
+
+      inputs_priority_label = str(os.getenv("inputs_priority_label", "priority"))
+      assert inputs_priority_label is not None
+      priority_label = re.compile(inputs_priority_label)
+      assert priority_label is not None
+
+
+      pullrequests = json.loads(inputs_pullrequests)
+      assert pullrequests is not None
+      pprint.pp(pullrequests)
+
+      base_branches = json.loads(inputs_base_branches)
+      assert base_branches is not None
+      pprint.pp(base_branches)
+
+      ## check base branch data is available
+      for pr in pullrequests:
+          print("checking baseRefName:", pr["baseRefName"])
+          assert pr["baseRefName"] is not None
+          assert pr["baseRefName"] in base_branches.keys()
+
+      ## check all prs are labeled as automerge
+      for pr in pullrequests:
+          assert pr_has_label(pr, automerge_label)
+
+      ## add .is_latest_base .can_automerge field to prs
+      for pr in pullrequests:
+          pr["is_latest_base"] = (
+              pr["baseRefOid"] == base_branches[pr["baseRefName"]]["target"]["oid"]
+          )
+
+
+      ordered_prs = sorted(
+          [pr for pr in pullrequests if pr_has_label(pr, ordered_label)],
+          key=pr_sort_by_number,
+      )
+
+      ordered_priority_prs = sorted(
+          [pr for pr in ordered_prs if pr_has_label(pr, priority_label)],
+          key=pr_sort_by_number,
+      )
+
+      priority_prs = sorted(
+          [pr for pr in pullrequests if pr_has_label(pr, priority_label)],
+          key=pr_sort_by_number,
+      )
+
+      regular_prs = sorted(
+          [
+              pr
+              for pr in pullrequests
+              if not pr_has_label(pr, priority_label)
+              and not pr_has_label(pr, ordered_label)
+          ],
+          key=pr_sort_by_number,
+      )
+
+      candidate_pr = None
+      if candidate_pr is None and len(ordered_priority_prs):
+          potential_prs = [
+              pr for pr in ordered_priority_prs if not pr["is_latest_base"]
+          ]
+          candidate_pr = next((pr for pr in potential_prs), None)
+
+
+      if candidate_pr is None and len(priority_prs):
+          potential_prs = [pr for pr in priority_prs if not pr["is_latest_base"]]
+          candidate_pr = (
+              random.choice(potential_prs) if len(potential_prs) > 0 else None
+          )
+
+
+      if candidate_pr is None and len(ordered_prs):
+          potential_prs = [pr for pr in ordered_prs if not pr["is_latest_base"]]
+          candidate_pr = next((pr for pr in potential_prs), None)
+
+
+      if candidate_pr is None and len(regular_prs):
+          potential_prs = [pr for pr in regular_prs if not pr["is_latest_base"]]
+          candidate_pr = (
+              random.choice(potential_prs) if len(potential_prs) > 0 else None
+          )
+
+
+      pr = candidate_pr
+      pr_json_encoded = json.dumps(json.dumps(pr)) if pr is not None else '"{}"'
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"pullrequest={pr_json_encoded}")
+          print(f"pullrequest={pr_json_encoded}", file=fh)
+          print(f"number={pr["number"] if pr is not None else -1}")
+          print(f"number={pr["number"] if pr is not None else -1}", file=fh)
+          print(f"branch={pr["headRefName"] if pr is not None else -1}")
+          print(f"branch={pr["headRefName"] if pr is not None else -1}", file=fh)
+          print(f"baseOid={pr["baseRefOid"] if pr is not None else -1}")
+          print(f"baseOid={pr["baseRefOid"] if pr is not None else -1}", file=fh)
+          print(f"headOid={pr["headRefOid"] if pr is not None else -1}")
+          print(f"headOid={pr["headRefOid"] if pr is not None else -1}", file=fh)
+          print(
+              f"is_latest_base={pr["is_latest_base"] if pr is not None else False}".lower()
+          )
+          print(
+              f"is_latest_base={pr["is_latest_base"] if pr is not None else False}",
+              file=fh,
+          )
