@@ -1,0 +1,159 @@
+name: NPM set packages versions
+description: >
+  Sets the package versions referenced by a given project or props file.
+
+  Input is a JSON string of a dictionary mapping package name to its version to update.
+  Returns a JSON string of a dictionary mapping package name to its updated version.
+
+  NOTE: This action is compatible with Unity's manifest.json
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  packages:
+    description: >
+      JSON string of a dictionary mapping package name to its version.
+
+      e.g. json
+      ```json
+      {
+        "com.unity.mathematics": "1.3.2"
+      }
+      ```
+
+      as such, the input string
+      ```json
+      "{\"com.unity.mathematics\":\"1.3.2\"}"
+      ```
+    required: true
+  configuration-files:
+    description: >
+      Configuration file (package.json or manifest.json) to check for packages.
+      Defaults to package.json.
+    required: false
+    default: package.json
+
+outputs:
+  packages:
+    description: dictionary mapping the retrieved packages to their respective versions
+    value: ${{ fromJSON(steps.set-package-versions.outputs.packages) }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        jsonpath-ng
+        detect-indent
+
+  - id: set-package-versions
+    name: Set package versions
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_packages: ${{ inputs.packages }}
+      inputs_configuration_files: ${{ inputs.configuration-files }}
+    run: |
+      ## actions/npm/set-packages-versions/action.yml#set-package-versions
+      import os, sys, shlex, re, json, pprint, itertools, collections
+      from pathlib import Path
+      from contextlib import chdir
+
+      # import jsonpath_ng.ext as jsonpath
+      from detect_indent import detect_indent
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      packages_str = str(os.getenv("inputs_packages", "{}"))
+      assert packages_str is not None
+      print(packages_str)
+      packages = json.loads(packages_str)
+      if not packages:
+          packages = dict()
+      pprint.pp(packages)
+
+      configuration_files = str(os.getenv("inputs_configuration_files")).split()
+      assert configuration_files is not None
+
+      updated_packages = dict()
+      with chdir(os.getenv("inputs_path", ".")):
+          for project_config in itertools.chain.from_iterable(
+              [Path(".").rglob(f) for f in configuration_files]
+          ):
+              print(project_config)
+              assert project_config.is_file()
+
+              project_text = project_config.read_text()
+              indent = detect_indent(project_text)
+              print("indent", indent)
+              project_data = json.loads(
+                  project_text, object_pairs_hook=collections.OrderedDict
+              )
+
+              for package in packages.keys():
+                  # path_str = f'$.dependencies["{package}"]'
+                  # print('setting package:', package, path_str)
+                  # jpath = jsonpath.parse(path_str)
+                  # jpath.update(project_data, packages[package])
+                  # print(jpath)
+                  if package in project_data["dependencies"]:
+                      project_data["dependencies"][package] = packages[package]
+                      updated_packages[package] = packages[package]
+
+              print(project_data)
+              project_data_json = json.dumps(project_data, indent=indent["indent"])
+              if not project_data_json.endswith("\n"):
+                  project_data_json + "\n"
+              project_config.write_text(project_data_json)
+
+      pprint.pp(updated_packages)
+
+      packages_json_escaped = json.dumps(json.dumps(updated_packages, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"packages={packages_json_escaped}")
+          print(f"packages={packages_json_escaped}", file=fh)
+
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/npm/set-packages-versions/action.yml#verify-outputs
+      ## actions/dotnet/set-packages-versions/action.yml#verify-outputs
+      steps.set-package-versions.outputs.packages
+      ${{steps.set-package-versions.outputs.packages}}
+
+      steps.set-package-versions.outputs.packages
+      ${{steps.set-package-versions.outputs.packages}}
+      ${{fromJSON(steps.set-package-versions.outputs.packages)}}
+
+
+  - id: verify-modifications
+    name: Verify modified files
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_configuration_files: ${{ inputs.configuration-files }}
+    run: |
+      ## actions/npm/set-packages-versions/action.yml#verify-modifications
+      ## actions/dotnet/set-packages-versions/action.yml#verify-modifications
+      import os, itertools
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      configuration_files = str(os.getenv("inputs_configuration_files")).split()
+      assert configuration_files is not None
+
+      for project_config in itertools.chain.from_iterable(
+          [Path(".").rglob(f) for f in configuration_files]
+      ):
+          print(f"====== {project_config} ======")
+          assert project_config.is_file()
+          print(project_config.read_text())
+          print(f"====== /{project_config} ======\n\n")
