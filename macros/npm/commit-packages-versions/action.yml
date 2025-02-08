@@ -1,0 +1,161 @@
+name: NPM commit packages versions
+description: >
+  Commits updated packages versions by performs the following steps:
+  1. split the modified file (usually package.json) into a series of single-line-patches.
+  2. commit those patches.
+
+  This action is compatible with Unity's manifest.json.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  configuration-files:
+    description: >
+      Configuration files (props or csproj) to check for packages.
+      Defaults to Build.Packages.props.
+    required: false
+    default: Build.Packages.props
+
+  packages:
+    description: JSON string of dictionary mapping the retrieved packages to their respective versions
+    required: true
+    default: '{}'
+
+  ## Committer
+  commit-username:
+    description: >
+      Author user.name to use.
+      Defaults to triggering_actor
+    required: false
+    default: ${{ github.workflow }} on behalf of ${{ github.triggering_actor }}
+  commit-useremail:
+    description: >
+      Author user.email to use.
+      Defaults actor anonymous email address, `ID+USERNAME@users.noreply.github.com`
+    required: false
+    default: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+
+  ## Commit message
+  commit-message:
+    description: >
+      Subject to write into patch header
+      Pystache template, getting fed {'filename': 'props', 'package': 'foobar', 'version': '1.2.3'} from created from inputs.packages
+    required: false
+    default: '{{filename}}: {{package}} v{{version}}'
+
+outputs:
+  patches:
+    description: >
+      String containing JSON-array of the patches.
+      NOTE: commit message will be extracted from the patch header,
+      unless provided
+    value: ${{ steps.create-patches.outputs.patches }}
+  commits:
+    description: Whitespace-separated list of created commits
+    value: ${{ steps.commit-patches.outputs.commits }}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        jsonpath-ng
+        detect-indent
+
+  - id: prepare-patch-regex
+    name: Prepare patch regex
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_packages: ${{ inputs.packages }}
+      inputs_configuration_files: ${{ inputs.configuration-files }}
+    run: |
+      ## macros/npm/commit-packages-versions/action.yml#prepare-patch-regex
+      import os, sys, re, json, pprint, itertools
+      from pathlib import Path
+      from contextlib import chdir
+      import jsonpath_ng.ext as jsonpath
+      from detect_indent import detect_indent
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+
+      def find_matching_nodes(root, packagename: str):
+          path_str = f'$.dependencies["{packagename}"]'
+          jpath = jsonpath.parse(path_str)
+          return [node for node in jpath.find(root)]
+
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      inputs_packages = str(os.getenv("inputs_packages", "{}"))
+      assert inputs_packages is not None
+      packages = json.loads(inputs_packages)
+      assert packages is not None
+      pprint.pp(packages)
+
+      configuration_files = str(os.getenv("inputs_configuration_files")).split()
+      assert configuration_files is not None
+
+      regexes = []
+      with chdir(path):
+          for project_config in itertools.chain.from_iterable(
+              [Path(".").rglob(f) for f in configuration_files]
+          ):
+              print(project_config)
+              assert project_config.is_file()
+
+              text = project_config.read_text()
+              indent = detect_indent(text)
+              root = json.loads(text)
+
+              for package in packages.keys():
+                  nodes = find_matching_nodes(root=root, packagename=package)
+                  if len(nodes) == 0:
+                      print("no match for", package)
+                  for node in nodes:
+                      regex = rf'("(?P<package>{package})"\s*:\s*"(?P<version>[\w\.\+\-]+)",?)'
+                      print(f"regex for {package}:", regex)
+                      if not regex in regexes:
+                          regexes.append(regex)
+
+      pprint.pp(regexes)
+      json_escaped = json.dumps(json.dumps(regexes, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"regexes={json_escaped}")
+          print(f"regexes={json_escaped}", file=fh)
+
+
+  - id: verify-intermediate-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## macros/npm/commit-packages-versions/action.yml#verify-intermediate-outputs
+      steps.prepare-patch-regex.outputs.regexes
+      ${{steps.prepare-patch-regex.outputs.regexes}}
+      ${{fromJSON(steps.prepare-patch-regex.outputs.regexes)}}
+      ${{ join(fromJSON(fromJSON(steps.prepare-patch-regex.outputs.regexes)), '    ') }}
+
+
+  - id: create-patches
+    uses: kagekirin/gha-py-toolbox/actions/git/get-single-line-patches@main
+    with:
+      path: ${{ inputs.path }}
+      regex-lines: ${{ join(fromJSON(fromJSON(steps.prepare-patch-regex.outputs.regexes)), '  ') }}
+      patch-author: ${{ inputs.commit-username }} <${{ inputs.commit-useremail }}>
+      patch-subject: ${{ inputs.commit-message }}
+      files: ${{ inputs.configuration-files }}
+
+  - id: commit-patches
+    uses: kagekirin/gha-py-toolbox/actions/git/commit-patches@main
+    with:
+      path: ${{ inputs.path }}
+      patches: ${{ steps.create-patches.outputs.patches }}
+      commit-username: ${{ inputs.commit-username }}
+      commit-useremail: ${{ inputs.commit-useremail }}
