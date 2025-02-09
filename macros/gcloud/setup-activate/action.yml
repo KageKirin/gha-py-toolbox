@@ -1,0 +1,37 @@
+name: GCLOUD MACRO Setup gcloud and activate service account
+description: >
+  Macro action performing the following:
+  * setup gcloud
+  * activate GCP service account
+
+inputs:
+  credentials:
+    description: >
+      The keyfile JSON data.
+      WARNING: expecting a JSON string, not a filename.
+
+      To obtain the key file for this command, use either the Google Cloud Console
+      or `gcloud iam service-accounts keys create`.
+      The key file can be .json (preferred) or .p12 (legacy) format. In the case of
+      legacy .p12 files, a separate password might be required and is displayed in
+      the Console when you create the key.
+
+      Usually you should pass secrets.GOOGLE_CREDENTIALS_JSON containing the JSON
+      string.
+    required: true
+
+outputs:
+  token:
+    description: >
+      The access token for the account specified by the inputs.credentials.
+    value: ${{ steps.gcp-activate.outputs.token }}
+
+runs:
+  using: composite
+  steps:
+  - id: gcloud-setup
+    uses: kagekirin/gha-py-toolbox/actions/gcloud/setup@main
+  - id: gcp-activate
+    uses: kagekirin/gha-py-toolbox/actions/gcloud/activate-service-account@main
+    with:
+      credentials: ${{ inputs.credentials }}
