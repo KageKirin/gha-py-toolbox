@@ -1,0 +1,97 @@
+name: GH format pull request body
+description: >
+  Formats the PR body message depending on a (pystache) template
+  and commits.
+
+inputs:
+  commits:
+    description: >
+      JSON-array containing information about the commits the PR will be created for.
+      Expects 'details' output from git/get-commits action.
+
+  body:
+    description: >
+      Text describing the contents of the pull request.
+      Pystache template, getting fed 'commits' (single preformatted string) and 'commit-messages' (data from inputs.commits)
+      NOTE: the template formatting inputs.commits into the 'commits' string is hardcoded.
+    required: false
+    default: '{{commits}}'
+
+outputs:
+  body:
+    description: The formatted body for the pull request.
+    value: ${{ fromJson(steps.format-pullrequest-body.outputs.body) }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pystache
+
+  - id: format-pullrequest-body
+    name: Format PR body
+    shell: python
+    env:
+      inputs_commits: ${{inputs.commits}}
+      inputs_body: ${{inputs.body}}
+    run: |
+      ## actions/gh/format-pullrequest-body/action.yml#format-pullrequest-body
+      import os, sys, shlex, re, json, pprint
+      import pystache
+      import html
+
+      inputs_commits = str(os.getenv("inputs_commits", "[]"))
+      assert inputs_commits is not None
+
+      inputs_body_template = str(os.getenv("inputs_body", ""))
+      assert inputs_body_template is not None
+
+      commits = json.loads(inputs_commits)
+      assert commits is not None
+      pprint.pp(commits)
+
+      commits_msg_template = pystache.parse(
+          r"""
+      {{#commits}}
+      - **{{title}}** {{#body}}
+        {{body}}{{/body}}
+      {{/commits}}
+      """
+      )
+
+      commits_msg = html.unescape(
+          pystache.render(commits_msg_template, {"commits": commits})
+      )
+      # print(commits_msg)
+
+      pr_body_template = pystache.parse(inputs_body_template)
+      pr_body = html.unescape(
+          pystache.render(
+              pr_body_template,
+              {
+                  "commits": commits_msg,
+                  "commit-data": commits,
+              },
+          )
+      )
+
+
+      print("======================== BODY  ========================")
+      print(pr_body)
+      print("=======================================================")
+
+      body_encoded = json.dumps(pr_body)
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"body={body_encoded}")
+          print(f"body={body_encoded}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/gh/format-pullrequest-body/action.yml#verify-outputs
+      steps.format-pullrequest-body.outputs.body
+      ${{steps.format-pullrequest-body.outputs.body}}
