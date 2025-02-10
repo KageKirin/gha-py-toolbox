@@ -1,0 +1,154 @@
+name: GH create pull request
+description: >
+  Creates a pull request on the given repository.
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format where to create the pull request.
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with "contents:write" permissions for the given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-pullrequest workflows.
+    required: true
+    default: ${{github.token}}
+
+  title:
+    description: >
+      The name of the pull request.
+    required: true
+  body:
+    description: >
+      Text describing the contents of the pull request.
+      Pystache template, getting fed 'commits' (single preformatted string) and 'commit-messages' as [{'commit': '<sha>', 'message': 'bump whatever'}] from each contained commit
+    required: false
+    default: '{{commits}}'
+  labels:
+    description: >
+      Labels (names) to add to pullrequest.
+      Labels must exist, i.e. be created before adding them to a PR or issue.
+      Whitespace-separated list.
+    required: false
+    default: ''
+
+  base:
+    description: base branch name
+    required: true
+    default: main
+  head:
+    description: head branch name
+    required: true
+
+  dry-run:
+    description: add --dry-run argument to perform dry-run
+    required: false
+    default: 'false'
+
+outputs:
+  id:
+    description: ID of the created pullrequest
+    value: ${{steps.create-pullrequest.outputs.id}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        PyGithub
+        pygit2
+
+  - id: create-pullrequest
+    name: Create pull request
+    shell: python
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+      inputs_title: ${{inputs.title}}
+      inputs_labels: ${{inputs.labels}}
+      inputs_body: ${{inputs.body}}
+      inputs_base: ${{inputs.base}}
+      inputs_head: ${{inputs.head}}
+      inputs_dryrun: ${{inputs.dry-run}}
+    run: |
+      ## actions/gh/create-pullrequest/action.yml#create-pullrequest
+      import os, sys, shlex, json, pprint, itertools
+      import pygit2
+      from pathlib import Path
+      from github import Github
+      from github import Auth
+      from github.GithubObject import NotSet
+
+      token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+      assert token is not None
+
+      api_url = str(os.getenv("inputs_api_url"))
+      assert api_url is not None
+
+      repository = str(os.getenv("inputs_repository"))
+      assert repository is not None
+
+      pr_title = str(os.getenv("inputs_title"))
+      assert pr_title is not None
+
+      pr_body = str(os.getenv("inputs_body"))
+      assert pr_body is not None
+
+      pr_labels = str(os.getenv("inputs_labels", "")).split()
+      assert pr_labels is not None
+
+      pr_base = str(os.getenv("inputs_base"))
+      assert pr_base is not None
+
+      pr_head = str(os.getenv("inputs_head"))
+      assert pr_head is not None
+
+      pr_dryrun = str(os.getenv("inputs_dryrun")) == "true"
+      assert pr_dryrun is not None
+
+      print("======================== TITLE ========================")
+      print(pr_title)
+      print("======================== BODY  ========================")
+      print(pr_body)
+      print("=======================================================")
+
+      auth = Auth.Token(token)
+      gh = Github(base_url=api_url, auth=auth)
+      repo = gh.get_repo(repository)
+
+      pr_id = -1
+      pullrequest_json = {
+          "id": -1,
+          "dry-run": True,
+      }
+      if not pr_dryrun:
+          pr = repo.create_pull(
+              base=pr_base,
+              head=pr_head,
+              title=pr_title,
+              body=pr_body,
+          )
+          if pr and pr_labels:
+              for label in pr_labels:
+                  pr.add_to_labels(label)
+          pprint.pp(pr)
+          pr_id = pr.id
+          pullrequest_json = pr.raw_data
+
+      pullrequest_json_encoded = json.dumps(json.dumps(pullrequest_json))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"id={pr_id}")
+          print(f"id={pr_id}", file=fh)
+          print(f"pullrequest={pullrequest_json_encoded}")
+          print(f"pullrequest={pullrequest_json_encoded}", file=fh)
