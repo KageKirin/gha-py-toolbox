@@ -1,0 +1,78 @@
+name: MACRO GH Update Pull Request
+description: >
+  Update a single pull request the hard way:
+  Checkout, Rebase
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: true
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+  actor:
+    description: Executing GitHub actor
+    required: true
+    default: ${{ github.triggering_actor }}
+  actor-id:
+    description: Executing GitHub actor ID
+    required: true
+    default: ${{ github.actor_id }}
+
+  pullrequest:
+    description: >
+      JSON dict (e.g. output of ghgql/get-pullrequests) containing at least:
+      - pullrequest branch
+      - pullrequest baseRefName (base branch)
+      for each element
+    required: true
+
+  dry-run:
+    description: if true, do not perform actual update
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+  - id: adapt-data
+    shell: python
+    env:
+      inputs_pullrequest: ${{ inputs.pullrequest }}
+    run: |
+      ## macros/gh/update-pullrequest/action.yml#adapt-data
+      import os, sys, shlex, json
+
+      inputs_pullrequest = str(os.getenv("inputs_pullrequest", "{}"))
+      pullrequest = json.loads(inputs_pullrequest)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"branch={pullrequest["headRefName"]}")
+          print(f"branch={pullrequest["headRefName"]}", file=fh)
+          print(f"base_branch={pullrequest["baseRefName"]}")
+          print(f"base_branch={pullrequest["baseRefName"]}", file=fh)
+
+  - id: update-pullrequest
+    uses: kagekirin/gha-py-toolbox/macros/git/checkout-rebase-xtheirs@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.token }}
+      fetch-depth: 0
+      ref: ${{ steps.adapt-data.outputs.branch }}
+      base: ${{ steps.adapt-data.outputs.base_branch }}
+      push: true
+      dry-run: ${{ inputs.dry-run }}
