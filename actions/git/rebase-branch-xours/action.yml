@@ -1,0 +1,32 @@
+name: GIT rebase branch Xours
+description: >
+  Rebase branch from given base branch
+  Runs `git rebase [branch] -Xours`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  branch:
+    description: >
+      (Head) Branch to rebase.
+      If empty (default), do not switch branches before running command.
+    required: false
+    default: ''
+  base:
+    description: >
+      Base branch (or commit-ish) to rebase from.
+      If empty (default), uses default branch (usually main or master).
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - id: rebase-xours
+    uses: kagekirin/gha-py-toolbox/actions/git/rebase-branch@main
+    with:
+      options: -Xours
+      path: ${{inputs.path}}
+      branch: ${{inputs.branch}}
+      base: ${{inputs.base}}
