@@ -1,0 +1,139 @@
+name: GIT commit files
+description: >
+  Add and commit a set of files.
+  Basically running `git add {{file}}` and `git commit -m "{{message}}"`.
+
+  Returns the commit hashes.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  files:
+    description: >
+      File paths of the files to add and commit.
+      Whitespace-separated values.
+    required: true
+    default: ''
+
+  ## Committer
+  commit-username:
+    description: >
+      Author user.name to use.
+      Defaults to triggering_actor
+    required: false
+    default: ${{ github.workflow }} on behalf of ${{ github.triggering_actor }}
+  commit-useremail:
+    description: >
+      Author user.email to use.
+      Defaults actor anonymous email address, `ID+USERNAME@users.noreply.github.com`
+    required: false
+    default: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+
+  ## Commit message
+  commit-message:
+    description: >
+      Commit message to be used instead of the one provided by the patch header.
+      Empty string (default) equates to using the patch `Subject` line.
+    required: false
+    default: ''
+
+outputs:
+  commits:
+    description: Whitespace-separated list of created commits
+    value: ${{ join(fromJSON(steps.commit-files.outputs.commits), '    ') }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+        pystache
+
+  - id: commit-files
+    name: Commit patches
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_files: ${{ inputs.files }}
+      inputs_commit_username: ${{ inputs.commit-username }}
+      inputs_commit_useremail: ${{ inputs.commit-useremail }}
+      inputs_commit_message: ${{ inputs.commit-message }}
+    run: |
+      ## actions/git/commit-files/action.yml#commit-files
+      import os, sys, shlex, re, json, pprint
+      from pathlib import Path
+      import pygit2
+      import patch as patchpy
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      files = str(os.getenv("inputs_files", "")).split()
+      assert files is not None
+      pprint.pp(patches)
+
+      commit_username = str(os.getenv("inputs_commit_username"))
+      assert commit_username is not None
+
+      commit_useremail = str(os.getenv("inputs_commit_useremail"))
+      assert commit_useremail is not None
+
+      inputs_commit_message = str(os.getenv("inputs_commit_message", ""))
+      commit_message_tpl = pystache.parse(inputs_commit_message)
+      renderer = pystache.Renderer()
+
+      commits = []
+      with chdir(str(os.getenv("inputs_path", "."))):
+          repo = pygit2.Repository(".")
+          index = repo.index
+
+          author = (
+              repo.default_signature
+              if ("user.name" in repo.config and "user.email" in repo.config)
+              else pygit2.Signature(commit_username, commit_useremail)
+          )
+          assert author is not None
+
+          for file in files:
+              p = Path(files)
+              if not p.exists():
+                  continue
+
+              index.add(file)
+              commit_message = renderer.render(commit_message_tpl, {"filename": file})
+              print(commit_message)
+
+              index.write()
+              commit = repo.create_commit(
+                  repo.head.name,
+                  author,
+                  author,
+                  commit_message,
+                  index.write_tree(),
+                  [repo.head.target],
+              )
+              commits.append(commit)
+
+      pprint.pp(commits)
+      commit_hashes = [repo[c].short_id for c in commits]
+      json_escaped = json.dumps(json.dumps(commit_hashes, sort_keys=True))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"commits={json_escaped}")
+          print(f"commits={json_escaped}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/git/commit-files/action.yml#verify-outputs
+      steps.commit-files.outputs.commits
+      ${{steps.commit-files.outputs.commits}}
+      ${{fromJSON(steps.commit-files.outputs.commits)}}
