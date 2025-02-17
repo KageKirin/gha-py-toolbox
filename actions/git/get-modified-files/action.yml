@@ -1,0 +1,70 @@
+name: GIT get modified files
+description: >
+  Check current git branch for modified files,
+  basically, `git ls-files --modified`
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+outputs:
+  files:
+    description: Whitespace-separated list of modified files
+    value: ${{ steps.get-modified.outputs.files }}
+  count:
+    description: Number of modified files
+    value: ${{ steps.get-modified.outputs.count }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+
+  - id: get-modified
+    name: Check for changes
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+    run: |
+      ## actions/git/get-modified-files/action.yml#get-modified
+      import os, pprint
+      import pygit2
+      from pygit2.enums import FileStatus
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      path = str(os.getenv("inputs_path", "."))
+      assert path is not None
+
+      with chdir(path):
+          repo = pygit2.Repository(".")
+          status = repo.status(untracked_files="no")
+
+          modified_files = [
+              f for f, flags in status.items() if flags == FileStatus.INDEX_MODIFIED
+          ]
+
+          files_wsv = " ".join(modified_files)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"files={files_wsv}")
+              print(f"files={files_wsv}", file=fh)
+              print(f"count={len(files_wsv)}")
+              print(f"count={len(files_wsv)}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/git/get-modified-files/action.yml#verify-outputs
+      steps.get-modified.outputs.files
+      ${{steps.get-modified.outputs.files}}
+
+      steps.get-modified.outputs.count
+      ${{steps.get-modified.outputs.count}}
