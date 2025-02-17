@@ -1,0 +1,306 @@
+name: UTIL JOB Checkout & Auto-Update assets
+description: >
+  Job action performing the following:
+  * checkout repo
+  * update assets
+  * commit changes
+  * push changes
+  * create PR
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  contents-token:
+    description: >
+      GitHub (Enterprise) token with "contents:write" permissions for the given repository.
+    required: true
+    default: ''
+
+  # Parameters
+  files:
+    description: >
+      Glob pattern(s) for files to update
+      Whitespace-separated values.
+    required: true
+  commands:
+    description: >
+      Command pattern to run for each file can contain `{{{filename}}}`
+      Newline-separated values.
+    required: true
+  ignore-errors:
+    description: >
+      Whether to ignore occurring errors, i.e. failing commands.
+      If false, this will raise an exception (assert) terminating the action.
+    required: true
+    default: 'true'
+
+
+  ## Committer
+  commit-username:
+    description: >
+      Author user.name to use.
+      Defaults to triggering_actor
+    required: false
+    default: ${{ github.workflow }} on behalf of ${{ github.triggering_actor }}
+  commit-useremail:
+    description: >
+      Author user.email to use.
+      Defaults actor anonymous email address, `ID+USERNAME@users.noreply.github.com`
+    required: false
+    default: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+
+  ## Commit message
+  commit-message:
+    description: >
+      Subject to write into patch header
+      Pystache template, getting fed {'package': 'foobar', 'value': '1.2.3'} from created from inputs.packages
+    required: false
+    default: ''
+
+  ## Commit branch
+  commit-branch:
+    description: >
+      Branch to create for the added commits
+    required: true
+
+  pullrequest-title:
+    description: >
+      Title for pull request.
+      String only.
+    required: true
+    default: 'build: bump dependencies'
+  pullrequest-body:
+    description: >
+      Body for pull request.
+      Pystache template, getting fed 'commits' (single preformatted string) and 'commit-messages' as [{'commit': '<sha>', 'message': 'bump whatever'}] from each contained commit
+    required: true
+    default: '{{commits}}'
+  pullrequest-labels:
+    description: >
+      Labels for pull request.
+      Whitespace-separated values
+    required: false
+    default: automerge ordered
+
+  dry-run:
+    description: >
+      Whether to actually push the changes and create a pullrequest.
+    required: true
+    default: 'true'
+
+  ## inputs for gh/get-pullrequests and ghgql/get-pullrequests
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  graphql-url:
+    description: >
+      GitHub (Enterprise) instance GRAPHQL API URL (including protocol).
+    required: false
+    default: ${{github.graphql_url}}
+
+
+  ## inputs from actions/checkout@v4
+  repository:
+    description: Repository name with owner. For example, actions/checkout
+    default: ${{github.repository}}
+  ref:
+    description: >
+      The branch, tag or SHA to checkout. When checking out the repository that
+      triggered a workflow, this defaults to the reference or SHA for that
+      event.  Otherwise, uses the default branch.
+    default: ${{github.ref}}
+  token:
+    description: >
+      Personal access token (PAT) used to fetch the repository. The PAT is configured
+      with the local git config, which enables your scripts to run authenticated git
+      commands. The post-job step removes the PAT.
+
+
+      We recommend using a service account with the least permissions necessary.
+      Also when generating a new PAT, select the least scopes necessary.
+
+
+      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+    default: ${{github.token}}
+  ssh-key:
+    description: >
+      SSH key used to fetch the repository. The SSH key is configured with the local
+      git config, which enables your scripts to run authenticated git commands.
+      The post-job step removes the SSH key.
+
+
+      We recommend using a service account with the least permissions necessary.
+
+
+      [Learn more about creating and using
+      encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+  ssh-known-hosts:
+    description: >
+      Known hosts in addition to the user and global host key database. The public
+      SSH keys for a host may be obtained using the utility `ssh-keyscan`. For example,
+      `ssh-keyscan github.com`. The public key for github.com is always implicitly
+      added.
+  ssh-strict:
+    description: >
+      Whether to perform strict host key checking. When true, adds the options `StrictHostKeyChecking=yes`
+      and `CheckHostIP=no` to the SSH command line. Use the input `ssh-known-hosts`
+      to
+      configure additional hosts.
+    default: true
+  ssh-user:
+    description: >
+      The user to use when connecting to the remote SSH host. By default 'git' is
+      used.
+    default: git
+  persist-credentials:
+    description: Whether to configure the token or SSH key with the local git config
+    default: true
+  clean:
+    description: Whether to execute `git clean -ffdx && git reset --hard HEAD` before fetching
+    default: true
+  filter:
+    description: >
+      Partially clone against a given filter.
+      Overrides sparse-checkout if set.
+    default:
+  sparse-checkout:
+    description: >
+      Do a sparse checkout on given patterns.
+      Each pattern should be separated with new lines.
+    default:
+  sparse-checkout-cone-mode:
+    description: >
+      Specifies whether to use cone-mode when doing a sparse checkout.
+    default: true
+  fetch-depth:
+    description: Number of commits to fetch. 0 indicates all history for all branches and tags.
+    default: 1
+  show-progress:
+    description: Whether to show progress status output when fetching.
+    default: true
+  lfs:
+    description: Whether to download Git-LFS files
+    default: true
+  submodules:
+    description: >
+      Whether to checkout submodules: `true` to checkout submodules or `recursive`
+      to
+      recursively checkout submodules.
+
+
+      When the `ssh-key` input is not provided, SSH URLs beginning with `git@github.com:`
+      are
+      converted to HTTPS.
+    default: false
+  set-safe-directory:
+    description: Add repository path as safe.directory for Git global config by running `git config --global --add safe.directory <path>`
+    default: true
+  github-server-url:
+    description: The base URL for the GitHub instance that you are trying to clone from, will use environment defaults to fetch from the same instance that the workflow is running from unless specified. Example URLs are https://github.com or https://my-ghes-server.example.com
+    required: true
+    default: ${{github.server_url}}
+
+runs:
+  using: composite
+  steps:
+
+  - id: get-pullrequests
+    uses: kagekirin/gha-py-toolbox/actions/ghgql/get-pullrequests@main
+    #uses: kagekirin/gha-py-toolbox/actions/gh/get-pullrequests@main
+    with:
+      repository: ${{ inputs.repository }}
+      token: ${{ inputs.contents-token }}
+      api-url: ${{ inputs.api-url }}
+      graphql-url: ${{ inputs.graphql-url }}
+      filter-branch: ${{ inputs.commit-branch }}
+      #filter-title: ${{ inputs.pullrequest-title }} ##< checking for the branch is enough
+
+  - uses: kagekirin/gha-py-toolbox/macros/git/checkout-with-tags@main
+    if: ${{ steps.get-pullrequests.outputs.count == 0 }}
+    with:
+      repository: ${{ inputs.repository }}
+      ref: ${{ inputs.ref }}
+      token: ${{ inputs.token }}
+      ssh-key: ${{ inputs.ssh-key }}
+      ssh-known-hosts: ${{ inputs.ssh-known-hosts }}
+      ssh-strict: ${{ inputs.ssh-strict }}
+      ssh-user: ${{ inputs.ssh-user }}
+      persist-credentials: ${{ inputs.persist-credentials }}
+      path: ${{ inputs.path }}
+      clean: ${{ inputs.clean }}
+      filter: ${{ inputs.filter }}
+      sparse-checkout: ${{ inputs.sparse-checkout }}
+      sparse-checkout-cone-mode: ${{ inputs.sparse-checkout-cone-mode }}
+      fetch-depth: ${{ inputs.fetch-depth }}
+      fetch-tags: ${{ inputs.fetch-tags }}
+      show-progress: ${{ inputs.show-progress }}
+      lfs: ${{ inputs.lfs }}
+      submodules: ${{ inputs.submodules }}
+      set-safe-directory: ${{ inputs.set-safe-directory }}
+      github-server-url: ${{ inputs.github-server-url }}
+
+  - id: create-branch
+    if: ${{ steps.get-pullrequests.outputs.count == 0 }}
+    uses: kagekirin/gha-py-toolbox/actions/git/switch-branch@main
+    with:
+      path: ${{ inputs.path }}
+      branch: ${{ inputs.commit-branch }}
+      base: ${{ inputs.ref }}
+      create: true
+
+  - id: update-assets
+    if: ${{ steps.get-pullrequests.outputs.count == 0 }}
+    uses: kagekirin/gha-py-toolbox/macros/util/update-assets@main
+    with:
+      path: ${{ inputs.path }}
+      files: ${{ inputs.files }}
+      commands: ${{ inputs.commands }}
+      commit-username: ${{ inputs.commit-username }}
+      commit-useremail: ${{ inputs.commit-useremail }}
+      commit-message: ${{ inputs.commit-message }}
+      ignore-errors: ${{ inputs.ignore-errors }}
+      dry-run: ${{ inputs.dry-run }}
+
+  - id: get-commits
+    if: ${{ steps.get-pullrequests.outputs.count == 0 }}
+    uses: kagekirin/gha-py-toolbox/actions/git/get-commits@main
+    with:
+      path: ${{ inputs.path }}
+      branch: ${{ inputs.commit-branch }}
+      reference: ${{ inputs.ref }}
+
+  - id: format-pullrequest
+    if: ${{ steps.get-pullrequests.outputs.count == 0 && steps.get-commits.outputs.count > 0 }}
+    uses: kagekirin/gha-py-toolbox/actions/gh/format-pullrequest-body@main
+    with:
+      body: ${{ inputs.pullrequest-body }}
+      commits: ${{ steps.get-commits.outputs.details }}
+
+  - id: push-changes
+    if: ${{ steps.get-pullrequests.outputs.count == 0 && steps.get-commits.outputs.count > 0 }}
+    uses: kagekirin/gha-py-toolbox/actions/git/push@main
+    with:
+      path: ${{ inputs.path }}
+      remote: origin
+      branch: ${{ inputs.commit-branch }}
+      arguments: --force
+      dry-run: ${{ inputs.dry-run }}
+
+  - id: create-pullrequest
+    if: ${{ steps.get-pullrequests.outputs.count == 0 && steps.get-commits.outputs.count > 0 }}
+    uses: kagekirin/gha-py-toolbox/actions/gh/create-pullrequest@main
+    with:
+      repository: ${{ inputs.repository }}
+      api-url: ${{ inputs.api-url }}
+      token: ${{ inputs.contents-token }}
+      title: ${{ inputs.pullrequest-title }}
+      body: ${{ steps.format-pullrequest.outputs.body }}
+      labels: ${{ inputs.pullrequest-labels }}
+      head: ${{ inputs.commit-branch }}
+      base: ${{ inputs.ref }}
+      dry-run: ${{ inputs.dry-run }}
