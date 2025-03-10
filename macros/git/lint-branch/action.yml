@@ -1,0 +1,54 @@
+name: GIT lint branch
+description: >
+  Runs a linter (gitlint) over all commits in the current branch
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  branch:
+    description: branch or commit-ish
+    required: false
+    default: main
+  arguments:
+    description: >
+      additional arguments to pass to push (e.g. --verbose, --silence, --debug)
+      DO NOT PASS `--commits` as this will be added to the call.
+    required: false
+    default: ''
+  configuration:
+    description: >
+      Configuration in string format to dump to .gitlint before linting.
+      WARNING: overwrites existing .gitlint if set.
+      CAVEAT: set `extra-path=./gitlint-custom.py` if you want to use the custom-rules below.
+    required: false
+    default: ''
+  custom-rules:
+    description: >
+      Custom-rules in string format to dump to `gitlint-custom.py` before linting.
+      WARNING: overwrites existing `gitlint-custom.py` if set.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - if: ${{ inputs.configuration != '' }}
+    name: Write Gitlint configuration (.gitlint)
+    uses: kagekirin/gha-py-toolbox/actions/util/dump-to-file@main
+    with:
+      contents: ${{inputs.configuration}}
+      file: .gitlint
+  - if: ${{ inputs.custom-rules != '' }}
+    name: Write Gitlint Extension (gitlint-custom.py)
+    uses: kagekirin/gha-py-toolbox/actions/util/dump-to-file@main
+    with:
+      contents: ${{inputs.custom-rules}}
+      file: gitlint-custom.py
+  - name: Lint
+    uses: kagekirin/gha-py-toolbox/actions/git/lint-branch@main
+    with:
+      path: ${{inputs.path}}
+      branch: ${{inputs.branch}}
+      arguments: ${{inputs.arguments}}
