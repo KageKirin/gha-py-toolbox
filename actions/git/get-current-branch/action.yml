@@ -1,0 +1,44 @@
+name: GIT get current branch
+description: >
+  Returns the current branch.
+  Basically, performing the same as `git rev-parse --abbrev-ref HEAD`,
+  but using pygit2.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+outputs:
+  branch:
+    description: current branch name
+    value: ${{steps.get-current-branch.outputs.branch}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        pygit2
+
+  - id: get-current-branch
+    name: Get the current branch
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/git/get-current-branch/action.yml#get-current-branch
+      import os, sys, pprint
+      import pygit2
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+      repo = pygit2.Repository(str(os.getenv("inputs_path", ".")))
+      head = repo.head.resolve()
+      print(head, head.name, head.shorthand)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"branch={head.shorthand}")
+          print(f"branch={head.shorthand}", file=fh)
