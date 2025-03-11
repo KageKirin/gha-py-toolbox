@@ -1,0 +1,62 @@
+name: UNITY get Unity.exe
+description: >-
+  Retrieves the Unity executable from the installation path.
+  CEAVEAT: must run after installation.
+
+inputs:
+  unity-path:
+    description: path where to install Unity to
+    required: true
+    default: .unity
+
+outputs:
+  unity-exe:
+    description: full path to Unity executable
+    value: ${{steps.get-unity-exe.outputs.unity}}
+  editor-path:
+    description: full path to Unity installation folder
+    value: ${{steps.get-unity-exe.outputs.editor}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: get-unity-exe
+    name: Retrieve installed Unity executable
+    shell: python
+    env:
+      unity_path: ${{inputs.unity-path}}
+    run: |
+      ## actions/unity/get-unity-exe/action.yml#get-unity-exe
+      import os, sys
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      unity_path = Path(os.getenv("unity_path"))
+
+      unities = [
+          x
+          for x in unity_path.absolute().rglob("Unity")
+          if x.is_file() and os.access(x.absolute(), os.X_OK)
+      ]
+      print(f"executables: {unities}")
+      assert len(unities) > 0
+      unity_exe = unities[0]
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"unity={unity_exe.absolute()}")
+          print(f"unity={unity_exe.absolute()}", file=fh)
+          print(f"editor={unity_exe.parent.absolute()}")
+          print(f"editor={unity_exe.parent.absolute()}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/unity/get-unity-exe/action.yml#verify-outputs
+      steps.get-unity-exe.outputs.unity-exe
+      ${{steps.get-unity-exe.outputs.unity-exe}}
+
+      steps.get-unity-exe.outputs.editor-path
+      ${{steps.get-unity-exe.outputs.editor-path}}
