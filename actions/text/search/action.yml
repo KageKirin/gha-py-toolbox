@@ -1,0 +1,46 @@
+name: TEXT search
+description: |
+  Text utility action to find a given substring inside a text.
+  NOTE: uses Python's regex-free string.find().
+
+inputs:
+  text:
+    description: the input text to search
+    required: true
+  term:
+    description: the term to search
+    required: true
+
+outputs:
+  result:
+    description: boolean result of the search
+    value: ${{ fromJSON(steps.search.outputs.result) }}
+  position:
+    description: position retrieved (int)
+    value: ${{ steps.search.outputs.position) }}
+
+runs:
+  using: composite
+  steps:
+  - id: search
+    name: Search
+    shell: python
+    env:
+      inputs_text: ${{inputs.text}}
+      inputs_term: ${{inputs.term}}
+    run: |
+      ## actions/text/search/action.yml#search
+      import os
+
+      text = os.getenv("inputs_text")
+      assert text
+
+      term = os.getenv("inputs_term")
+      assert term
+
+      result = str(text).find(str(term))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"result={result >= 0 }")
+          print(f"result={result >= 0 }", file=fh)
+          print(f"position={position}")
+          print(f"position={position}", file=fh)
