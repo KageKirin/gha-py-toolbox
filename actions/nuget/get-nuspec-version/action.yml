@@ -1,0 +1,83 @@
+name: DOTNET get nuspec version
+description: >
+  Retrieves the version from a given nuspec file.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  version-xpath:
+    description: >
+      XPath expression to locate the version.
+      WARNING: Defaults to //metadata/version.
+    required: true
+    default: //metadata/version
+  nuspec-file:
+    description: >
+      Nuspec file (.nuspec) to check for the version.
+      Defaults to *.nuspec and will take the first result.
+    required: false
+    default: '*.nuspec'
+
+outputs:
+  version:
+    description: the retrieved version string
+    value: ${{ steps.get-nuspec-version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: get-nuspec-version
+    name: Get nuspec version
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_version_xpath: ${{ inputs.version-xpath }}
+      inputs_nuspec_file: ${{ inputs.nuspec-file }}
+    run: |
+      ## actions/nuget/get-nuspec-version/action.yml#get-nuspec-version
+      import os, sys
+      from pathlib import Path
+      from contextlib import chdir
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      parser = etree.XMLParser(remove_blank_text=True)
+
+      xpath = str(os.getenv("inputs_version_xpath", "//metadata/version"))
+      assert xpath is not None
+
+      nuspec_file_pattern = str(os.getenv("inputs_nuspec_file", "*.nuspec"))
+      assert nuspec_file_pattern is not None
+
+      with chdir(os.getenv("inputs_path", ".")):
+          nuspec_file = [f for f in Path(".").rglob(nuspec_file_pattern)][0]
+          print(nuspec_file)
+          assert nuspec_file.is_file()
+
+          root = etree.parse(nuspec_file, parser).getroot()
+          nodes = [node for node in root.xpath(xpath)]
+          version = nodes[0].text
+          print("version:", version)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"version={version}")
+              print(f"version={version}", file=fh)
+
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/get-nuspec-version/action.yml#verify-outputs
+      steps.get-nuspec-version.outputs.version
+      ${{ steps.get-nuspec-version.outputs.version }}
