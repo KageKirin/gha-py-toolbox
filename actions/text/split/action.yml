@@ -1,0 +1,52 @@
+name: TEXT split
+description: |
+  Text utility action to split a given text into several strings
+  according to the specified markers.
+  NOTE: uses Python's regex-free string.split().
+
+inputs:
+  text:
+    description: the input text to split
+    required: true
+  marker:
+    description: the marker indicating where to split
+    required: true
+
+outputs:
+  result:
+    description: whitespace-separated list of the split terms
+    value: ${{ steps.split.outputs.result }}
+  array:
+    description: JSON array of the split terms
+    value: ${{ fromJSON(steps.split.outputs.array) }}
+
+runs:
+  using: composite
+  steps:
+  - id: split
+    name: Split
+    shell: python
+    env:
+      inputs_text: ${{inputs.text}}
+      inputs_marker: ${{inputs.marker}}
+    run: |
+      ## actions/text/split/action.yml#split
+      import os, json
+
+      text = os.getenv("inputs_text")
+      assert text
+
+      marker = os.getenv("inputs_marker")
+      assert marker
+
+      split_text = str(text).split(str(marker))
+      assert split_text
+
+      result = "\n".join(split_text)
+      array = json.dumps(json.dumps(split_text))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"result={result}")
+          print(f"result={result}", file=fh)
+          print(f"array={array}")
+          print(f"array={array}", file=fh)
