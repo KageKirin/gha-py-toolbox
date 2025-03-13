@@ -1,0 +1,49 @@
+name: TEXT REGEX replace
+description: |
+  Text utility action to replace a given regular expression inside a text.
+  NOTE: uses Python's re.replace().
+
+inputs:
+  text:
+    description: the input text to replace
+    required: true
+  regex:
+    description: the regex to replace
+    required: true
+  replacement:
+    description: the text to replace the regex with
+    required: true
+
+outputs:
+  result:
+    description: result of the replace
+    value: ${{ steps.replace.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+  - id: replace
+    name: Replace
+    shell: python
+    env:
+      inputs_text: ${{inputs.text}}
+      inputs_regex: ${{inputs.regex}}
+      inputs_replacement: ${{inputs.replacement}}
+    run: |
+      ## actions/text/regex-replace/action.yml#replace
+      import os, re
+
+      text = os.getenv("inputs_text")
+      assert text
+
+      regex = os.getenv("inputs_regex")
+      assert regex
+      rx = re.compile(str(regex))
+
+      repl = os.getenv("inputs_replacement")
+      assert repl
+
+      result = rx.sub(str(text), str(repl))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"result={result}")
+          print(f"result={result}", file=fh)
