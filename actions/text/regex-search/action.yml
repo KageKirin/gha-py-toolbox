@@ -1,0 +1,54 @@
+name: TEXT REGEX search
+description: |
+  Text utility action to find a given regular expression inside a text.
+  NOTE: uses Python's re.findall().
+
+inputs:
+  text:
+    description: the input text to search
+    required: true
+  regex:
+    description: the regex to search
+    required: true
+
+outputs:
+  result:
+    description: boolean result of the search
+    value: ${{ fromJSON(steps.search.outputs.result) }}
+  matches:
+    description: whitespace-separated list of the matching terms
+    value: ${{ steps.search.outputs.matches }}
+  array:
+    description: JSON array of the matching terms
+    value: ${{ fromJSON(steps.search.outputs.array) }}
+
+runs:
+  using: composite
+  steps:
+  - id: search
+    name: Search
+    shell: python
+    env:
+      inputs_text: ${{inputs.text}}
+      inputs_regex: ${{inputs.regex}}
+    run: |
+      ## actions/text/regex-search/action.yml#search
+      import os, re, json
+
+      text = os.getenv("inputs_text")
+      assert text
+
+      regex = os.getenv("inputs_regex")
+      assert regex
+      rx = re.compile(str(regex))
+
+      result = rx.findall(str(text))
+      array = json.dumps(json.dumps(result)) if result else '"[]"'
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"result={result is not None and len(result) > 0}".lower())
+          print(f"result={result is not None and len(result) > 0}".lower(), file=fh)
+          print(f"matches={' '.join(result) if result is not None else ''}")
+          print(f"matches={' '.join(result) if result is not None else ''}", file=fh)
+          print(f"array={array}")
+          print(f"array={array}", file=fh)
