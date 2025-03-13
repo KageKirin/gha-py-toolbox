@@ -1,0 +1,55 @@
+name: TEXT REGEX match
+description: |
+  Text utility action to find a given regular expression inside a text.
+  NOTE: uses Python's re.match().
+
+inputs:
+  text:
+    description: the input text to match
+    required: true
+  regex:
+    description: the regex to match
+    required: true
+
+outputs:
+  result:
+    description: boolean result of the match
+    value: ${{ fromJSON(steps.match.outputs.result) }}
+  matches:
+    description: whitespace-separated list of the matching groups
+    value: ${{ steps.match.outputs.matches }}
+  array:
+    description: JSON array of the matching groups
+    value: ${{ fromJSON(steps.match.outputs.array) }}
+
+runs:
+  using: composite
+  steps:
+  - id: match
+    name: Match
+    shell: python
+    env:
+      inputs_text: ${{inputs.text}}
+      inputs_regex: ${{inputs.regex}}
+    run: |
+      ## actions/text/regex-match/action.yml#match
+      import os, re, json
+
+      text = os.getenv("inputs_text")
+      assert text
+
+      regex = os.getenv("inputs_regex")
+      assert regex
+      rx = re.compile(str(regex))
+
+      result = rx.match(str(text))
+      matches = [g for g in result.groups()] if result is not None else []
+      array = json.dumps(json.dumps(matches))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"result={result is not None}")
+          print(f"result={result is not None}", file=fh)
+          print(f"matches={' '.join(matches)}")
+          print(f"matches={' '.join(matches)}", file=fh)
+          print(f"array={array}")
+          print(f"array={array}", file=fh)
