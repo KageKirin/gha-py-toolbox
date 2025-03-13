@@ -1,0 +1,41 @@
+name: TEXT match
+description: |
+  Text utility action to find a given substring inside a text.
+  NOTE: uses Python's regex-free '==' equality.
+
+inputs:
+  text:
+    description: the input text to match
+    required: true
+  term:
+    description: the term to match against the text
+    required: true
+
+outputs:
+  result:
+    description: boolean result of the match
+    value: ${{ fromJSON(steps.match.outputs.result) }}
+
+runs:
+  using: composite
+  steps:
+  - id: match
+    name: Match
+    shell: python
+    env:
+      inputs_text: ${{inputs.text}}
+      inputs_term: ${{inputs.term}}
+    run: |
+      ## actions/text/match/action.yml#match
+      import os
+
+      text = os.getenv("inputs_text")
+      assert text
+
+      marker = os.getenv("inputs_term")
+      assert marker
+
+      result = str(text) == str(term)
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"result={result}".lower())
+          print(f"result={result}".lower(), file=fh)
