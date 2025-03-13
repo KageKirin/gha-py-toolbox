@@ -1,0 +1,48 @@
+name: TEXT replace
+description: |
+  Text utility action to replace a given substring inside a text.
+  NOTE: uses Python's regex-free string.replace().
+
+inputs:
+  text:
+    description: the input text to replace
+    required: true
+  term:
+    description: the term to replace
+    required: true
+  replacement:
+    description: the term to replace with
+    required: true
+
+outputs:
+  result:
+    description: result of the replace
+    value: ${{ steps.replace.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+  - id: replace
+    name: Search
+    shell: python
+    env:
+      inputs_text: ${{inputs.text}}
+      inputs_term: ${{inputs.term}}
+      inputs_replacement: ${{inputs.replacement}}
+    run: |
+      ## actions/text/replace/action.yml#replace
+      import os
+
+      text = os.getenv("inputs_text")
+      assert text
+
+      term = os.getenv("inputs_term")
+      assert term
+
+      repl = os.getenv("inputs_replacement")
+      assert repl
+
+      result = str(text).replace(str(term), str(repl))
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"result={result}")
+          print(f"result={result}", file=fh)
