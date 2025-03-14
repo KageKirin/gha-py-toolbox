@@ -1,0 +1,490 @@
+name: UNITY MACRO Cross(platform) build
+description: >-
+  Macro to build a given unity project for multiple platforms
+  NOTE: requires Unity to be installed with the correct components
+  and activated before running.
+
+
+inputs:
+  # common inputs
+  unity-exe:
+    description: >-
+      Path to Unity executable.
+      This value is usually returned by the setup action.
+    required: true
+  project-path:
+    description: >-
+      Path to Unity project.
+      Defaults to workspace.
+    required: true
+    default: ${{github.workspace}}
+
+  cache-artifacts:
+    description: >-
+      Whether to cache the build artifacts.
+      Caching allows follow up jobs to re-use the build artifacts from the job calling this macro.
+
+      This is especially useful for functionality and unit testing since rebuilding the application
+      might take some time.
+    required: false
+    default: false
+  cache-name:
+    description: >-
+      Name to give to cache
+    required: false
+    default: ${{runner.os}}-${{github.repository_id}}-${{github.head_ref}}-${{github.sha}}-${{github.run_id}}
+
+  app-name:
+    description: Base app name without any extension
+    required: false
+    default: UnityGame
+
+  # per target platform
+  build-linux-player:
+    description: Flag to set to true for building the Linux Player binary.
+    required: true
+    default: false
+  linux-player-output-path:
+    description: >-
+      Path to project output Linux Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Linux, so no extension is actually fine.
+    required: true
+    default: ./build/native/linux-x64/${{inputs.app-name}}
+  linux-player-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildLinux64Player {buildpath}
+
+  build-linux-server:
+    description: Flag to set to true for building the Linux Server binary.
+    required: true
+    default: false
+  linux-server-output-path:
+    description: >-
+      Path to project output Linux Server binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Linux, so no extension is actually fine.
+    required: true
+    default: ./build/native/linux-x64/${{inputs.app-name}}-server
+  linux-server-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget linux64 -standaloneBuildSubtarget server -build {buildpath}
+
+
+  build-macos-player:
+    description: Flag to set to true for building the MacOS Player binary.
+    required: true
+    default: false
+  macos-player-output-path:
+    description: >-
+      Path to project output MacOS Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is MacOS, so no extension is actually fine.
+    required: true
+    default: ./build/native/osx-arm64/${{inputs.app-name}}.app
+  macos-player-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildOSXUniversalPlayer {buildpath}
+
+  build-macos-server:
+    description: Flag to set to true for building the MacOS Server binary.
+    required: true
+    default: false
+  macos-server-output-path:
+    description: >-
+      Path to project output MacOS Server binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is MacOS, so no extension is actually fine.
+    required: true
+    default: ./build/native/osx-arm64/${{inputs.app-name}}-server.app
+  macos-server-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget osxuniversal -standaloneBuildSubtarget server -build {buildpath}
+
+
+  build-windows-player:
+    description: Flag to set to true for building the Windows Player binary.
+    required: true
+    default: false
+  windows-player-output-path:
+    description: >-
+      Path to project output Windows Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Windows, so no extension is actually fine.
+    required: true
+    default: ./build/native/windows-x64/${{inputs.app-name}}.exe
+  windows-player-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildWindows64Player {buildpath}
+
+  build-windows-server:
+    description: Flag to set to true for building the Windows Server binary.
+    required: true
+    default: false
+  windows-server-output-path:
+    description: >-
+      Path to project output Windows Server binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Windows, so no extension is actually fine.
+    required: true
+    default: ./build/native/windows-x64/${{inputs.app-name}}-server.exe
+  windows-server-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget win64 -standaloneBuildSubtarget server -build {buildpath}
+
+
+  build-ios:
+    description: Flag to set to true for building the iOS Player binary.
+    required: true
+    default: false
+  ios-output-path:
+    description: >-
+      Path to project output iOS Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Windows, so no extension is actually fine.
+    required: true
+    default: ./build/native/ios-arm64/${{inputs.app-name}}.app
+  ios-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget ios -build {buildpath}
+
+
+  build-tvos:
+    description: Flag to set to true for building the tvOS Player binary.
+    required: true
+    default: false
+  tvos-output-path:
+    description: >-
+      Path to project output tvOS Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Windows, so no extension is actually fine.
+    required: true
+    default: ./build/native/tvos-arm64/${{inputs.app-name}}.app
+  tvos-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget tvos -build {buildpath}
+
+
+  build-visionos:
+    description: Flag to set to true for building the VisionOS Player binary.
+    required: true
+    default: false
+  visionos-output-path:
+    description: >-
+      Path to project output VisionOS Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Windows, so no extension is actually fine.
+    required: true
+    default: ./build/native/visionos-arm64/${{inputs.app-name}}.app
+  visionos-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget visionos -build {buildpath}
+
+
+  build-android:
+    description: Flag to set to true for building the Android Player binary.
+    required: true
+    default: false
+  android-output-path:
+    description: >-
+      Path to project output Android Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Windows, so no extension is actually fine.
+    required: true
+    default: ./build/native/android-arm64/${{inputs.app-name}}.apk
+  android-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget android -build {buildpath}
+
+
+  build-webgl:
+    description: Flag to set to true for building the WebGL Player binary.
+    required: true
+    default: false
+  webgl-output-path:
+    description: >-
+      Path to project output WebGL Player binary.
+      Defaults to workspace/build/<reponame>.
+      Must contain the platform-specific file extension (.exe, .app) for platforms requiring such.
+      Default build is Windows, so no extension is actually fine.
+    required: true
+    default: ./build/native/webgl/${{inputs.app-name}}.html
+  webgl-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget webgl -build {buildpath}
+
+  
+outputs:
+  build-path:
+    description: path to build artifact (directory)
+    value: ${{ steps.check-build-results.outputs.build_dir }}
+  build-exe:
+    description: path to build artifact (executable)
+    value: ${{ steps.check-build-results.outputs.build_exe }}
+
+
+runs:
+  using: composite
+  steps:
+  - id: build-linux-player
+    if: ${{ fromJSON(inputs.build-linux-player) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-path: ${{ inputs.linux-player-output-path }}
+      arguments: ${{ inputs.inputs.linux-player-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-linux-server
+    if: ${{ fromJSON(inputs.build-linux-server) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-path: ${{ inputs.linux-server-output-path }}
+      arguments: ${{ inputs.inputs.linux-server-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-macos-player
+    if: ${{ fromJSON(inputs.build-macos-player) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-path: ${{ inputs.macos-player-output-path }}
+      arguments: ${{ inputs.inputs.macos-player-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-macos-server
+    if: ${{ fromJSON(inputs.build-macos-server) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-path: ${{ inputs.macos-server-output-path }}
+      arguments: ${{ inputs.inputs.macos-server-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-windows-player
+    if: ${{ fromJSON(inputs.build-windows-player) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-path: ${{ inputs.windows-player-output-path }}
+      arguments: ${{ inputs.inputs.windows-player-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-windows-server
+    if: ${{ fromJSON(inputs.build-windows-server) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-path: ${{ inputs.windows-server-output-path }}
+      arguments: ${{ inputs.inputs.windows-server-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-ios
+    if: fromJSON(inputs.build-ios) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-pathinputs.: ${{ ios-output-path }}
+      arguments: ${{ inputs.ios-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-tvos
+    if: fromJSON(inputs.build-tvos) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-pathinputs.: ${{ tvos-output-path }}
+      arguments: ${{ inputs.tvos-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-visionos
+    if: fromJSON(inputs.build-visionos) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-pathinputs.: ${{ visionos-output-path }}
+      arguments: ${{ inputs.visionos-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-android
+    if: fromJSON(inputs.build-android) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-pathinputs.: ${{ android-output-path }}
+      arguments: ${{ inputs.android-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
+
+  - id: build-webgl
+    if: fromJSON(inputs.build-webgl) }}
+    uses: kagekirin/gha-py-toolbox/actions/unity/build@main
+    with:
+      unity-exe: ${{steps.setup-unity.outputs.unity-exe}}
+      project-path: ${{ inputs.project-path }}
+      output-pathinputs.: ${{ webgl-output-path }}
+      arguments: ${{ inputs.webgl-arguments }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ secrets.GH_PACKAGE_TOKEN }}
