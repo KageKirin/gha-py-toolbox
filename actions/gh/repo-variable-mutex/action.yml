@@ -1,0 +1,128 @@
+name: GH repo variable mutex
+description: >-
+  Using a repo variable, sets a variable as mutex or waits until able to set.
+  NOTE: this action has a post action to release the mutex
+
+  Details:
+  - pre: creates a variable in repo scope with the given context, and sets it to 0
+         if the variable already exists, it does nothing
+  - main: gets the variable and checks if it is 0.
+         if the variable is 0: set the variable to a random number and continue
+         if the variable is not 0, i.e. the mutex is locked: wait (sleep a few seconds) and try again
+  - post: sets the variable back to 0
+
+  Debug/Unblock: simply set the variable back to 0
+
+
+inputs:
+  repository:
+    description: >
+      Repository in `owner/repo` format for which to get the pull requests
+    required: false
+    default: ${{github.repository}}
+  api-url:
+    description: >
+      GitHub (Enterprise) instance API URL (including protocol).
+    required: false
+    default: ${{github.api_url}}
+  token:
+    description: >
+      GitHub (Enterprise): token with at least "contents:read" permissions for the
+      given repository.
+      You might prefer passing a different token via secret.MY_TOKEN to allow chain
+      reaction-like
+      triggering of on-release workflows.
+    required: false
+    default: ${{github.token}}
+
+  variable:
+    description: name of the variable to use as mutex
+    required: true
+  timeout:
+    description: timeout in seconds between retries
+    required: false
+    default: '30'
+
+
+runs:
+  using: composite
+  steps:
+  - id: access-mutex
+    uses: kagekirin/gha-py-toolbox/actions/util/prepost@main
+    name: Access the mutex
+    env:
+      inputs_repository: ${{inputs.repository}}
+      inputs_api_url: ${{inputs.api-url}}
+      inputs_token: ${{inputs.token}}
+      input_variable: ${{inputs.variable}}
+      input_timeout: ${{inputs.timeout}}
+    with:
+      shell: python
+      pre: |
+        import os, sys, re, json, pprint
+        from github import Github
+        from github import Auth
+        from github.GithubObject import NotSet
+
+        token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+        api_url = str(os.getenv("inputs_api_url"))
+        repository = str(os.getenv("inputs_repository"))
+        variable = str(os.getenv("inputs_variable"))
+
+        auth = Auth.Token(token)
+        gh = Github(base_url=api_url, auth=auth)
+        repo = gh.get_repo(repository)
+
+        matching_vars = [v for v in repo.get_variables() if v.name == variable]
+        if len(matching_vars) > 0:
+            var = matching_vars[0]
+            print(f"var exists: {var.name}: {var.value}")
+        else:
+            print(f"var {variable} does not exist")
+            var = repo.create_variable(variable, str(0))
+            print(f"created var: {var.name}: {var.value}")
+
+      main: |
+        import os, sys, re, json, pprint, time, random
+        from github import Github
+        from github import Auth
+        from github.GithubObject import NotSet
+
+        token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+        api_url = str(os.getenv("inputs_api_url"))
+        repository = str(os.getenv("inputs_repository"))
+        variable = str(os.getenv("inputs_variable"))
+        timeout = int(os.getenv("inputs_timeout"))
+
+        auth = Auth.Token(token)
+        gh = Github(base_url=api_url, auth=auth)
+        repo = gh.get_repo(repository)
+
+        while(True):
+            var = repo.get_variable(variable)
+            if int(var.value) == 0:
+                break
+            else:
+                time.sleep(timeout)
+
+        var.edit(str(randrange(10000)))
+
+      post: |
+        import os, sys, re, json, pprint
+        from github import Github
+        from github import Auth
+        from github.GithubObject import NotSet
+
+        token = str(os.getenv("inputs_token", os.getenv("GITHUB_TOKEN", "")))
+
+        api_url = str(os.getenv("inputs_api_url"))
+        repository = str(os.getenv("inputs_repository"))
+        variable = str(os.getenv("inputs_variable"))
+
+        auth = Auth.Token(token)
+        gh = Github(base_url=api_url, auth=auth)
+        repo = gh.get_repo(repository)
+        var = repo.get_variable(variable)
+        var.edit(str(0))
