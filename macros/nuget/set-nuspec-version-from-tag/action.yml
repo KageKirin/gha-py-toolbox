@@ -1,0 +1,45 @@
+name: NUGET set nuspec version from
+description: >
+  Sets the version in a given nuspec file.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  version-xpath:
+    description: >
+      XPath expression to locate the version.
+      WARNING: Defaults to //metadata/version.
+    required: true
+    default: //metadata/version
+  nuspec-file:
+    description: >
+      Nuspec file (.nuspec) to check for the version.
+      Defaults to *.nuspec and will take the first result.
+    required: false
+    default: '*.nuspec'
+
+outputs:
+  version:
+    description: the set version string
+    value: ${{ steps.set-nuspec-version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+  - id: get-semver-tag
+    name: Get highest tag
+    uses: kagekirin/gha-py-toolbox/actions/git/get-highest-semver-tag@main
+    with:
+      path: ${{ inputs.path }}
+
+  - id: set-nuspec-version
+    name: Set nuspec version
+    uses: kagekirin/gha-py-toolbox/actions/nuget/set-nuspec-version@main
+    with:
+      path: ${{ inputs.path }}
+      version-xpath: ${{ inputs.version-xpath }}
+      nuspec-file: ${{ inputs.nuspec-file }}
+      version: ${{ steps.get-semver-tag.outputs.version }}
