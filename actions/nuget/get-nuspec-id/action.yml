@@ -1,0 +1,82 @@
+name: DOTNET get nuspec id
+description: >
+  Retrieves the id from a given nuspec file.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  id-xpath:
+    description: >
+      XPath expression to locate the id.
+      WARNING: Defaults to //metadata/id.
+    required: true
+    default: //metadata/id
+  nuspec-file:
+    description: >
+      Nuspec file (.nuspec) to check for the id.
+      Defaults to *.nuspec and will take the first result.
+    required: false
+    default: '*.nuspec'
+
+outputs:
+  id:
+    description: the retrieved id string
+    value: ${{ steps.get-nuspec-id.outputs.id }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: get-nuspec-id
+    name: Get nuspec id
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_id_xpath: ${{ inputs.id-xpath }}
+      inputs_nuspec_file: ${{ inputs.nuspec-file }}
+    run: |
+      ## actions/nuget/get-nuspec-id/action.yml#get-nuspec-id
+      import os, sys
+      from pathlib import Path
+      from contextlib import chdir
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      parser = etree.XMLParser(remove_blank_text=True)
+
+      xpath = str(os.getenv("inputs_id_xpath", "//metadata/id"))
+      assert xpath is not None
+
+      nuspec_file_pattern = str(os.getenv("inputs_nuspec_file", "*.nuspec"))
+      assert nuspec_file_pattern is not None
+
+      with chdir(os.getenv("inputs_path", ".")):
+          nuspec_file = [f for f in Path(".").rglob(nuspec_file_pattern)][0]
+          print(nuspec_file)
+          assert nuspec_file.is_file()
+
+          root = etree.parse(nuspec_file, parser).getroot()
+          nodes = [node for node in root.xpath(xpath)]
+          id = nodes[0].text
+          print("id:", id)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"id={id}")
+              print(f"id={id}", file=fh)
+
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/get-nuspec-id/action.yml#verify-outputs
+      steps.get-nuspec-id.outputs.id      ${{steps.get-nuspec-id.outputs.id}
