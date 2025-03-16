@@ -1,0 +1,125 @@
+name: NuGet Push
+description: >
+  Performs nuget push for a given nuget package (.nupkg) file.
+
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  packages:
+    description: >-
+      project(s) to build
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to all.
+    required: false
+    default: '*.nupkg'
+  registry:
+    description: >-
+      NuGet registry to publish on.
+      Defaults to **GitHub NuGet**.
+    required: false
+    default: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+  token:
+    description: >-
+      Authorization token for the above registry.
+      GitHub (Enterprise): requires 'packages:write' permissions.
+    required: false
+    default: ${{github.token}}
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet nuget push`
+      whitespace separated list.
+    required: false
+    default: ''
+
+
+runs:
+  using: composite
+  steps:
+  - id: nuget-help
+    name: NuGet help
+    shell: python
+    run: |
+      ## actions/nuget/push/action.yml#nuget-help
+      import os
+
+      err = os.waitstatus_to_exitcode(os.system("nuget help"))
+      exit(err)
+
+
+  - id: nuget-push
+    name: NuGet push
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_packages: ${{ inputs.packages }}
+      inputs_registry: ${{ inputs.registry }}
+      inputs_token: ${{ inputs.token }}
+      inputs_options: ${{ inputs.options }}
+    run: |
+      ## actions/nuget/push/action.yml#nuget-push
+      import os
+      from pathlib import Path
+      from contextlib import chdir
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+
+      inputs_path = os.getenv("inputs_path")
+      assert inputs_path
+      path = Path(inputs_path)
+
+      with chdir(path):
+          inputs_packages = os.getenv("inputs_packages")
+          assert inputs_packages is not None
+          packages = [
+              f for f in Path(".").rglob(p) for p in str(inputs_packages).split()
+          ]
+          pprint.pp(packages)
+
+          inputs_registry = os.getenv("inputs_registry")
+          assert inputs_registry is not None
+          registry = str(inputs_registry)
+
+          inputs_token = os.getenv("inputs_token")
+          assert inputs_token is not None
+          token = str(inputs_token)
+
+          inputs_options = os.getenv("inputs_options", "")
+          assert inputs_options is not None
+          options = str(inputs_options).split()
+
+          # comes first
+          command = ["nuget", "push", "{package}"]
+
+          if registry:
+              command += ["-Source", registry]
+
+          if token:
+              command += ["-ApiKey", token]
+
+          if options:
+              command += options
+
+          cmd = " ".join(command)
+
+          err = 0
+          for package in packages:
+              print(cmd.format(package=package), flush=True)
+              err += os.waitstatus_to_exitcode(os.system(cmd.format(package=package)))
+          exit(err)
+
+
+  - id: nuget-help-push
+    if: ${{ failure() }}
+    name: NuGet help push
+    shell: python
+    run: |
+      ## actions/nuget/push/action.yml#nuget-help-push
+      import os
+
+      err = os.waitstatus_to_exitcode(os.system("nuget help push"))
+      exit(err)
