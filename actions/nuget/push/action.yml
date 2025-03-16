@@ -1,0 +1,111 @@
+name: NuGet Push
+description: >
+  Performs nuget push for a given nuget package (.nupkg) file.
+
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  package:
+    description: package to push (relative path)
+    required: true
+
+  source:
+    description: Package source (URL, UNC/folder path or package source name) to push to. Defaults to DefaultPushSource if specified in NuGet.Config.
+    required: false
+    default: ''
+  api-key:
+    description: The API key for the server.
+    required: true
+  symbol-source:
+    description: Symbol server URL to push to.
+    required: false
+    default: ''
+  symbol-api-key:
+    description: The API key for the symbol server.
+    required: false
+    default: ''
+  timeout:
+    description: Timeout for pushing to a server in seconds. Defaults to 300 seconds (5 minutes).
+    required: false
+    default: 300
+  disable-buffering:
+    description: Disable buffering when pushing to an HTTP(S) server to decrease memory usage. Note that when this option is enabled, integrated windows authentication might not work.
+    required: false
+    default: false
+  no-symbols:
+    description: If a symbols package exists, it will not be pushed to a symbol server.
+    required: false
+    default: false
+  no-service-endpoint:
+    description: Does not append "api/v2/packages" to the source URL.
+    required: false
+    default: false
+  skip-duplicate:
+    description: If a package and version already exists, skip it and continue with the next package in the push, if any.
+    required: false
+    default: false
+  verbosity:
+    description: Display this amount of details in the output: normal, quiet, detailed.
+    required: false
+    default: normal
+  non-interactive:
+    description: Do not prompt for user input or confirmations.
+    required: false
+    default: false
+  config-file:
+    description: The NuGet configuration file. If specified, only the settings from this file will be used. If not specified, the hierarchy of configuration files from the current directory will be used. To learn more about NuGet configuration go to https://docs.microsoft.com/en-us/nuget/consume-packages/configuring-nuget-behavior.
+    required: false
+    default: false
+  force-english-output:
+    description: Forces the application to run using an invariant, English-based culture.
+    required: false
+    default: false
+
+
+runs:
+  using: composite
+  steps:
+  - shell: cat {0}
+    run: |
+      NuGet Version: 6.3.1.1
+      usage: NuGet push <package path> [API key] [options]
+
+      Pushes a package to the server and publishes it.
+      NuGet's default configuration is obtained by loading %AppData%\NuGet\NuGet.config, then loading any nuget.config or .nuget\nuget.config starting from root of drive and ending in current directory.
+
+          Specify the path to the package and your API key to push the package to the server.
+
+      options:
+
+      -Source                  (src)                                  Package source (URL, UNC/folder path or package source name) to push to. Defaults to DefaultPushSource if specified in NuGet.Config.
+      -ApiKey                                                         The API key for the server.
+      -SymbolSource                                                   Symbol server URL to push to.
+      -SymbolApiKey                                                   The API key for the symbol server.
+      -Timeout                                                        Timeout for pushing to a server in seconds. Defaults to 300 seconds (5 minutes).
+      -DisableBuffering                                               Disable buffering when pushing to an HTTP(S) server to decrease memory usage. Note that when this option is enabled, integrated windows authentication might not work.
+      -NoSymbols                                                      If a symbols package exists, it will not be pushed to a symbol server.
+      -NoServiceEndpoint                                              Does not append "api/v2/packages" to the source URL.
+      -SkipDuplicate                                                  If a package and version already exists, skip it and continue with the next package in the push, if any.
+      -Help                    (?)                                    help
+      -Verbosity                                                      Display this amount of details in the output: normal, quiet, detailed.
+      -NonInteractive                                                 Do not prompt for user input or confirmations.
+      -ConfigFile                                                     The NuGet configuration file. If specified, only the settings from this file will be used. If not specified, the hierarchy of configuration files from the current directory will be used. To learn more about NuGet configuration go to https://docs.microsoft.com/en-us/nuget/consume-packages/configuring-nuget-behavior.
+      -ForceEnglishOutput                                             Forces the application to run using an invariant, English-based culture.
+
+      examples:
+
+      nuget push foo.nupkg 4003d786-cc37-4004-bfdf-c4f3e8ef9b3a
+
+      nuget push foo.nupkg 4003d786-cc37-4004-bfdf-c4f3e8ef9b3a -src http://customsource/
+
+      nuget push foo.nupkg
+
+      nuget push foo.nupkg.symbols
+
+      nuget push foo.nupkg -Timeout 360
+
+      For more information, visit https://docs.nuget.org/docs/reference/command-line-reference
+
