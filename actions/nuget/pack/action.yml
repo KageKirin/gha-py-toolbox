@@ -1,0 +1,475 @@
+name: NuGet Pack
+description: >
+  Performs nuget pack for a given nuspec file.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  nuspec-project-file:
+    description: nuspec or project file to create nupk for (relative path)
+    required: true
+
+  output-directory:
+    description: >
+      forwarded to option -OutputDirectory
+      Specifies the directory for the created NuGet package file. If not specified, uses the current directory.
+    required: false
+    default: ''
+  base-path:
+    description: >
+      forwarded to option -BasePath
+      The base path of the files defined in the nuspec file.
+    required: false
+    default: ''
+  version:
+    description: >
+      forwarded to option -Version
+      Overrides the version number from the nuspec file.
+    required: false
+    default: ''
+  suffix:
+    description: >
+      forwarded to option -Suffix
+      Appends a pre-release suffix to the internally generated version number.
+    required: false
+    default: ''
+  exclude:
+    description: >
+      forwarded to option -Exclude
+      Specifies one or more wildcard patterns to exclude when creating a package.
+      Whitespace-separated list
+    required: false
+    default: ''
+  symbols:
+    description: >
+      forwarded to option -Symbols
+      Determines if a package containing sources and symbols should be created. When specified with a nuspec, creates a regular NuGet package file and the corresponding symbols package.
+    required: false
+    default: false
+  tool:
+    description: >
+      forwarded to option -Tool
+      Determines if the output files of the project should be in the tool folder.
+    required: false
+    default: false
+  build:
+    description: >
+      forwarded to option -Build
+      Determines if the project should be built before building the package.
+    required: false
+    default: false
+  no-default-excludes:
+    description: >
+      forwarded to option -NoDefaultExcludes
+      Prevent default exclusion of NuGet package files and files and folders starting with a dot e.g. .svn.
+    required: false
+    default: false
+  no-package-analysis:
+    description: >
+      forwarded to option -NoPackageAnalysis
+      Specify if the command should not run package analysis after building the package.
+    required: false
+    default: false
+  exclude-empty-directories:
+    description: >
+      forwarded to option -ExcludeEmptyDirectories
+      Prevent inclusion of empty directories when building the package.
+    required: false
+    default: false
+  include-referenced-projects:
+    description: >
+      forwarded to option -IncludeReferencedProjects
+      Include referenced projects either as dependencies or as part of the package.
+    required: false
+    default: false
+  properties:
+    description: >
+      forwarded to option -Properties
+      Provides the ability to specify a semicolon ";" delimited list of properties when creating a package.
+    required: false
+    default: ''
+  min-client-version:
+    description: >
+      forwarded to option -MinClientVersion
+      Set the minClientVersion attribute for the created package.
+    required: false
+    default: ''
+  symbol-package-format:
+    description: >
+      forwarded to option -SymbolPackageFormat
+      When creating a symbols package, allows to choose between the 'snupkg' and 'symbols.nupkg' format.
+    required: false
+    default: ''
+  packages-directory:
+    description: >
+      forwarded to option -PackagesDirectory
+      Specifies the packages folder.
+    required: false
+    default: ''
+  solution-directory:
+    description: >
+      forwarded to option -SolutionDirectory
+      Specifies the solution directory.
+    required: false
+    default: ''
+  ms-build-version:
+    description: >
+      forwarded to option -MSBuildVersion
+      Specifies the version of MSBuild to be used with this command. Supported values are 4, 12, 14, 15.1, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9, 16.0. Bydefault the MSBuild in your path is picked, otherwise it defaults to the highest installed version of MSBuild.
+    required: false
+    default: ''
+  ms-build-path:
+    description: >
+      forwarded to option -MSBuildPath
+      Specifies the path of MSBuild to be used with this command. This command will takes precedence over MSbuildVersion, nuget will always pick MSbuild fromthis specified path.
+    required: false
+    default: ''
+  install-package-to-output-path:
+    description: >
+      forwarded to option -InstallPackageToOutputPath
+      Specify if the command should prepare the package output directory to support share as feed.
+    required: false
+    default: false
+  output-file-names-without-version:
+    description: >
+      forwarded to option -OutputFileNamesWithoutVersion
+      Specify if the command should prepare the package output name without the version.
+    required: false
+    default: false
+  config-file:
+    description: >
+      forwarded to option -ConfigFile
+      Specify the configuration file for the pack command.
+    required: false
+    default: ''
+  verbosity:
+    description: >
+      forwarded to option -Verbosity
+      Display this amount of details in the output: normal, quiet, detailed.
+    required: false
+    default: normal
+
+
+outputs:
+  package:
+    description: the created .nupkg file
+    value: ${{ steps.get-nupgk.outputs.files }}
+
+
+runs:
+  using: composite
+  steps:
+  - id: nuget-help
+    name: NuGet help
+    shell: python
+    run: |
+      import os
+      err = os.waitstatus_to_exitcode(os.system("nuget help"))
+      exit(err)
+  - id: nuget-help-pack
+    name: NuGet help pack
+    shell: python
+    run: |
+      import os
+      err = os.waitstatus_to_exitcode(os.system("nuget help pack"))
+      exit(err)
+
+  - id: nuget-pack
+    name: NuGet pack
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_nuspec_project_file: ${{ inputs.nuspec-project-file }}
+      inputs_output_directory: ${{ inputs.output-directory }}
+      inputs_base_path: ${{ inputs.base-path }}
+      inputs_version: ${{ inputs.version }}
+      inputs_suffix: ${{ inputs.suffix }}
+      inputs_exclude: ${{ inputs.exclude }}
+      inputs_symbols: ${{ inputs.symbols }}
+      inputs_tool: ${{ inputs.tool }}
+      inputs_build: ${{ inputs.build }}
+      inputs_no_default_excludes: ${{ inputs.no-default-excludes }}
+      inputs_no_package_analysis: ${{ inputs.no-package-analysis }}
+      inputs_exclude_empty_directories: ${{ inputs.exclude-empty-directories }}
+      inputs_include_referenced_projects: ${{ inputs.include-referenced-projects }}
+      inputs_properties: ${{ inputs.properties }}
+      inputs_min_client_version: ${{ inputs.min-client-version }}
+      inputs_symbol_package_format: ${{ inputs.symbol-package-format }}
+      inputs_packages_directory: ${{ inputs.packages-directory }}
+      inputs_solution_directory: ${{ inputs.solution-directory }}
+      inputs_ms_build_version: ${{ inputs.ms-build-version }}
+      inputs_ms_build_path: ${{ inputs.ms-build-path }}
+      inputs_install_package_to_output_path: ${{ inputs.install-package-to-output-path }}
+      inputs_output_file_names_without_version: ${{ inputs.output-file-names-without-version }}
+      inputs_config_file: ${{ inputs.config-file }}
+      inputs_verbosity: ${{ inputs.verbosity }}
+    run: |
+      ## actions/nuget/pack/action.yml#nuget-pack
+      import os, re, pprint
+      from contextlib import chdir
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+
+      inputs_path = os.getenv("inputs_path")
+      assert inputs_path
+      path = Path(inputs_path)
+
+      with chdir(path):
+
+          inputs_nuspec_project_file = os.getenv("inputs_nuspec_project_file")
+          assert inputs_nuspec_project_file is not None
+          nuspec_project_file = Path(inputs_nuspec_project_file)
+
+          inputs_output_directory = os.getenv("inputs_output_directory", ".")
+          assert inputs_output_directory is not None
+          output_directory = Path(inputs_output_directory)
+
+          inputs_base_path = os.getenv("inputs_base_path", ".")
+          assert inputs_base_path is not None
+          base_path = Path(inputs_base_path)
+
+          inputs_version = os.getenv("inputs_version", "")
+          assert inputs_version is not None
+          version = str(inputs_version)
+
+          inputs_suffix = os.getenv("inputs_suffix", "")
+          assert inputs_suffix is not None
+          suffix = str(inputs_suffix)
+
+          inputs_exclude = os.getenv("inputs_exclude", "")
+          assert inputs_exclude is not None
+          excludes = str(inputs_exclude).split()
+
+          inputs_symbols = os.getenv("inputs_symbols")
+          assert inputs_symbols is not None
+          symbols = str(inputs_symbols) == "true"
+
+          inputs_tool = os.getenv("inputs_tool")
+          assert inputs_tool is not None
+          tool = str(inputs_tool) == "true"
+
+          inputs_build = os.getenv("inputs_build")
+          assert inputs_build is not None
+          build = str(inputs_build) == "true"
+
+          inputs_no_default_excludes = os.getenv("inputs_no_default_excludes")
+          assert inputs_no_default_excludes is not None
+          no_default_excludes = str(inputs_no_default_excludes) == "true"
+
+          inputs_no_package_analysis = os.getenv("inputs_no_package_analysis")
+          assert inputs_no_package_analysis is not None
+          no_package_analysis = str(inputs_no_package_analysis) == "true"
+
+          inputs_exclude_empty_directories = os.getenv(
+              "inputs_exclude_empty_directories"
+          )
+          assert inputs_exclude_empty_directories is not None
+          exclude_empty_directories = str(inputs_exclude_empty_directories) == "true"
+
+          inputs_include_referenced_projects = os.getenv(
+              "inputs_include_referenced_projects"
+          )
+          assert inputs_include_referenced_projects is not None
+          include_referenced_projects = (
+              str(inputs_include_referenced_projects) == "true"
+          )
+
+          inputs_properties = os.getenv("inputs_properties", "")
+          assert inputs_properties is not None
+          properties = re.split(r"[;\s]+", str(inputs_properties))
+
+          inputs_min_client_version = os.getenv("inputs_min_client_version", "")
+          assert inputs_min_client_version is not None
+          min_client_version = str(inputs_min_client_version)
+
+          inputs_symbol_package_format = os.getenv("inputs_symbol_package_format", "")
+          assert inputs_symbol_package_format is not None
+          symbol_package_format = str(inputs_symbol_package_format)
+
+          inputs_packages_directory = os.getenv("inputs_packages_directory")
+          assert inputs_packages_directory is not None
+          packages_directory = Path(inputs_packages_directory)
+
+          inputs_solution_directory = os.getenv("inputs_solution_directory", "")
+          assert inputs_solution_directory is not None
+          solution_directory = Path(inputs_solution_directory)
+
+          inputs_ms_build_version = os.getenv("inputs_ms_build_version", "")
+          assert inputs_ms_build_version is not None
+          ms_build_version = str(inputs_ms_build_version)
+
+          inputs_ms_build_path = os.getenv("inputs_ms_build_path", "")
+          assert inputs_ms_build_path is not None
+          ms_build_path = Path(inputs_ms_build_path)
+
+          inputs_install_package_to_output_path = os.getenv(
+              "inputs_install_package_to_output_path"
+          )
+          assert inputs_install_package_to_output_path is not None
+          install_package_to_output_path = (
+              str(inputs_install_package_to_output_path) == "true"
+          )
+
+          inputs_output_file_names_without_version = os.getenv(
+              "inputs_output_file_names_without_version"
+          )
+          assert inputs_output_file_names_without_version is not None
+          output_file_names_without_version = (
+              str(inputs_output_file_names_without_version) == "true"
+          )
+
+          inputs_config_file = os.getenv("inputs_config_file", "")
+          assert inputs_config_file is not None
+          config_file = Path(inputs_config_file)
+
+          inputs_verbosity = os.getenv("inputs_verbosity")
+          assert inputs_verbosity is not None
+          verbosity = str(inputs_verbosity)
+
+          command = ["nuget", "pack"]
+
+          if output_directory:
+              command += ["-OutputDirectory", str(output_directory)]
+
+          if base_path:
+              command += ["-BasePath", str(base_path)]
+
+          if version:
+              command += ["-Version", version]
+
+          if suffix:
+              command += ["-Suffix", suffix]
+
+          if excludes and len(excludes):
+              command += ["-Excludes", " ".join(excludes)]
+
+          if symbols:
+              command += ["-Symbols"]
+
+          if tool:
+              command += ["-Tool"]
+
+          if build:
+              command += ["-Build"]
+
+          if no_default_excludes:
+              command += ["-NoDefaultExcludes"]
+
+          if no_package_analysis:
+              command += ["-NoPackageAnalysis"]
+
+          if exclude_empty_directories:
+              command += ["-ExcludeEmptyDirectories"]
+
+          if include_referenced_projects:
+              command += ["-IncludeReferencedProjects"]
+
+          if properties and len(properties):
+              command += ["-Properties", ";".join(properties)]
+
+          if min_client_version:
+              command += ["-MinClientVersion", min_client_version]
+
+          if symbol_package_format:
+              command += ["-SymbolPackageFormat", symbol_package_format]
+
+          if packages_directory:
+              command += ["-PackagesDirectory", str(packages_directory)]
+
+          #if solution_directory:
+          #    command += ["-SolutionDirectory", str(solution_directory)]
+
+          if install_package_to_output_path:
+              command += ["-InstallPackageToOutputPath"]
+
+          if output_file_names_without_version:
+              command += ["-OutputFileNamesWithoutVersion"]
+
+          if config_file:
+              command += ["-ConfigFile", str(config_file)]
+
+          if verbosity:
+              command += ["-Verbosity", verbosity]
+
+          # comes last
+          command += [str(nuspec_project_file)]
+
+          cmd = " ".join(command)
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
+
+  - id: help
+    shell: cat {0}
+    run: |
+      ## actions/nuget/pack/action.yml#help
+      NuGet Version: 6.3.1.1
+      usage: NuGet pack <nuspec | project> [options]
+
+      Creates a NuGet package based on the specified nuspec or project file.
+
+          Specify the location of the nuspec or project file to create a package.
+
+      options:
+
+      -OutputDirectory                         Specifies the directory for the created NuGet package file. If not specified, uses the current directory.
+      -BasePath                                The base path of the files defined in the nuspec file.
+      -Version                                 Overrides the version number from the nuspec file.
+      -Suffix                                  Appends a pre-release suffix to the internally generated version number.
+      -Exclude +                               Specifies one or more wildcard patterns to exclude when creating a package.
+      -Symbols                                 Determines if a package containing sources and symbols should be created. When specified with a nuspec, creates a regular NuGet package file and the corresponding symbols package.
+      -Tool                                    Determines if the output files of the project should be in the tool folder.
+      -Build                                   Determines if the project should be built before building the package.
+      -NoDefaultExcludes                       Prevent default exclusion of NuGet package files and files and folders starting with a dot e.g. .svn.
+      -NoPackageAnalysis                       Specify if the command should not run package analysis after building the package.
+      -ExcludeEmptyDirectories                 Prevent inclusion of empty directories when building the package.
+      -IncludeReferencedProjects               Include referenced projects either as dependencies or as part of the package.
+      -Properties +                       (p)  Provides the ability to specify a semicolon ";" delimited list of propertieswhen creating a package.
+      -MinClientVersion                        Set the minClientVersion attribute for the created package.
+      -SymbolPackageFormat                     When creating a symbols package, allows to choose between the 'snupkg' and 'symbols.nupkg' format.
+      -PackagesDirectory                       Specifies the packages folder.
+      -SolutionDirectory                       Specifies the solution directory.
+      -MSBuildVersion                          Specifies the version of MSBuild to be used with this command. Supported values are 4, 12, 14, 15.1, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9, 16.0. Bydefault the MSBuild in your path is picked, otherwise it defaults to the highest installed version of MSBuild.
+      -MSBuildPath                             Specifies the path of MSBuild to be used with this command. This command will takes precedence over MSbuildVersion, nuget will always pick MSbuild fromthis specified path.
+      -InstallPackageToOutputPath              Specify if the command should prepare the package output directory to support share as feed.
+      -OutputFileNamesWithoutVersion           Specify if the command should prepare the package output name without the version.
+      -ConfigFile                              Specify the configuration file for the pack command.
+      -Help                               (?)  help
+      -Verbosity                               Display this amount of details in the output: normal, quiet, detailed.
+      -NonInteractive                          Do not prompt for user input or confirmations.
+      -ForceEnglishOutput                      Forces the application to run using an invariant, English-based culture.
+
+      examples:
+
+      nuget pack
+
+      nuget pack foo.nuspec
+
+      nuget pack foo.csproj
+
+      nuget pack foo.csproj -Build -Symbols -Properties Configuration=Release
+
+      nuget pack foo.nuspec -Version 2.1.0
+
+      For more information, visit https://docs.nuget.org/docs/reference/command-line-reference
+
+  - id: get-nupgk
+    uses: kagekirin/gha-py-toolbox/actions/util/locate-files@main
+    with:
+      path: ${{ inputs.path }}
+      patterns: '*.nupkg'
+      depth: -1
+
+  - id: verify
+    name: Verify outputs
+    shell: cat {0}
+    run: |
+      ## actions/nuget/pack/action.yml#verify
+      count: ${{ steps.get-nupgk.outputs.count }}
+      files: ${{ steps.get-nupgk.outputs.files }}
+
+      json: ${{ steps.get-nupgk.outputs.json }}
