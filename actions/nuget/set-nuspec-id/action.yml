@@ -1,0 +1,119 @@
+name: DOTNET set nuspec id
+description: >
+  Sets the id in a given nuspec file.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  id-xpath:
+    description: >
+      XPath expression to locate the id.
+      WARNING: Defaults to //metadata/id.
+    required: true
+    default: //metadata/id
+  nuspec-file:
+    description: >
+      Nuspec file (.nuspec) to check for the id.
+      Defaults to *.nuspec and will take the first result.
+    required: false
+    default: '*.nuspec'
+  id:
+    description: >
+      id string to set.
+      CAVEAT: not checked for validity
+    required: true
+
+
+outputs:
+  id:
+    description: the set id string
+    value: ${{ steps.set-nuspec-id.outputs.id }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: set-nuspec-id
+    name: Set nuspec id
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_id_xpath: ${{ inputs.id-xpath }}
+      inputs_nuspec_file: ${{ inputs.nuspec-file }}
+      inputs_id: ${{ inputs.id }}
+    run: |
+      ## actions/nuget/set-nuspec-id/action.yml#set-nuspec-id
+      import os, sys
+      from pathlib import Path
+      from contextlib import chdir
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      parser = etree.XMLParser(
+          remove_blank_text=False,  #!< don't modify whitespace
+          remove_comments=False,
+          remove_pis=False,
+          strip_cdata=False,
+      )
+
+      xpath = str(os.getenv("inputs_id_xpath", "//metadata/id"))
+      assert xpath is not None
+
+      nuspec_file_pattern = str(os.getenv("inputs_nuspec_file", "*.nuspec"))
+      assert nuspec_file_pattern is not None
+
+      inputs_id = str(os.getenv("inputs_id"))
+      assert inputs_id is not None
+
+      with chdir(os.getenv("inputs_path", ".")):
+          nuspec_file = [f for f in Path(".").rglob(nuspec_file_pattern)][0]
+          print(nuspec_file)
+          assert nuspec_file.is_file()
+
+          has_xml_declaration = nuspec_file.read_text().startswith("<?xml")
+
+          root = etree.parse(nuspec_file, parser).getroot()
+          nodes = [node for node in root.xpath(xpath)]
+          nodes[0].text = inputs_id
+          id = nodes[0].text
+          print("id:", id, inputs_id)
+
+          tree = etree.ElementTree(root)
+          nuspec_xml = (
+              (
+                  etree.tostring(
+                      root,
+                      encoding=tree.docinfo.encoding,
+                      standalone=tree.docinfo.standalone,
+                      xml_declaration=True,
+                  )
+                  if has_xml_declaration
+                  else etree.tostring(root)
+              )
+              .decode(encoding="utf-8")
+              .replace('"/>', '" />')
+          )
+          print(nuspec_xml)
+          nuspec_file.write_text(nuspec_xml)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              print(f"id={id}")
+              print(f"id={id}", file=fh)
+
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/nuget/set-nuspec-id/action.yml#verify-outputs
+      steps.set-nuspec-id.outputs.id
+      ${{ steps.set-nuspec-id.outputs.id }}
