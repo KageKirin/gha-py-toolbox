@@ -1,0 +1,119 @@
+name: NuGet Pack
+description: >
+  Performs nuget pack for a given nuspec file.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  nuspec-project-file:
+    description: nuspec or project file to create nupk for (relative path)
+    required: true
+
+  options:
+    description: >
+      supplementary command line options forwarded to `nuget pack`
+      shitespace-separated list.
+    required: false
+    default: ''
+
+
+outputs:
+  package:
+    description: the created .nupkg file
+    value: ${{ steps.get-nupgk.outputs.files }}
+
+
+runs:
+  using: composite
+  steps:
+  - id: nuget-help
+    name: NuGet help
+    shell: python
+    run: |
+      ## actions/nuget/pack/action.yml#nuget-help
+      import os
+
+      err = os.waitstatus_to_exitcode(os.system("nuget help"))
+      exit(err)
+
+
+  - id: nuget-pack
+    name: NuGet pack
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_nuspec_project_file: ${{ inputs.nuspec-project-file }}
+      inputs_options: ${{ inputs.options }}
+    run: |
+      ## actions/nuget/pack/action.yml#nuget-pack
+      import os, re, pprint
+      from contextlib import chdir
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      assert inputs_path is not None
+      path = Path(inputs_path)
+
+      inputs_options = os.getenv("inputs_options", "")
+      assert inputs_options is not None
+      options = str(inputs_options).split()
+
+      with chdir(path):
+          inputs_nuspec_project_file = os.getenv("inputs_nuspec_project_file")
+          assert inputs_nuspec_project_file is not None
+          nuspec_project_files = [
+              f for f in Path(".").rglob(inputs_nuspec_project_file)
+          ]
+          nuspec_project_file = (
+              nuspec_project_files[0]
+              if len(nuspec_project_files) > 0
+              else Path(inputs_nuspec_project_file)
+          )
+          print(
+              "packing from",
+              nuspec_project_file,
+              nuspec_project_file.absolute(),
+              flush=True,
+          )
+
+          # comes first
+          command = ["nuget", "pack", str(nuspec_project_file)] + options
+
+          cmd = " ".join(command)
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
+
+  - id: nuget-help-pack
+    if: ${{ failure() }}
+    name: NuGet help pack
+    shell: python
+    run: |
+      ## actions/nuget/pack/action.yml#nuget-help-pack
+      import os
+
+      err = os.waitstatus_to_exitcode(os.system("nuget help pack"))
+      exit(err)
+
+
+  - id: get-nupgk
+    uses: kagekirin/gha-py-toolbox/actions/util/locate-files@main
+    with:
+      path: ${{ inputs.path }}
+      patterns: '*.nupkg'
+      depth: -1
+
+  - id: verify
+    name: Verify outputs
+    shell: cat {0}
+    run: |
+      ## actions/nuget/pack/action.yml#verify
+      count: ${{ steps.get-nupgk.outputs.count }}
+      files: ${{ steps.get-nupgk.outputs.files }}
+
+      json: ${{ steps.get-nupgk.outputs.json }}
