@@ -1,0 +1,27 @@
+name: TEXT log file
+description: |
+  Text utility action to log the contents of a given text file.
+
+inputs:
+  file:
+    description: the file to log
+    required: true
+
+
+runs:
+  using: composite
+  steps:
+  - id: log
+    name: Log
+    shell: python
+    env:
+      inputs_file: ${{ inputs.file }}
+    run: |
+      ## actions/text/log-file/action.yml#log
+      import os
+      from pathlib import Path
+
+      inputs_file = os.getenv("inputs_file")
+      assert inputs_file
+      file = Path(inputs_file)
+      print(file.read_text())
