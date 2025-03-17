@@ -1,0 +1,36 @@
+name: TEXT dump to file
+description: |
+  Text utility action to dump a given content string to a text file.
+
+inputs:
+  contents:
+    description: the input text to dump
+    required: true
+  file:
+    description: the file to dump to
+    required: true
+
+
+runs:
+  using: composite
+  steps:
+  - id: dump
+    name: Dump
+    shell: python
+    env:
+      inputs_contents: ${{ inputs.contents }}
+      inputs_file: ${{ inputs.file }}
+    run: |
+      ## actions/text/dump-to-file/action.yml#dump
+      import os
+      from pathlib import Path
+
+      inputs_contents = os.getenv("inputs_contents")
+      assert inputs_contents
+      contents = str(inputs_contents)
+
+      inputs_file = os.getenv("inputs_file")
+      assert inputs_file
+      file = Path(inputs_file)
+
+      file.write_text(contents)
