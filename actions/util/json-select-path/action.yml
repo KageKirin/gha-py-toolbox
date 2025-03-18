@@ -1,0 +1,56 @@
+name: TEXT JSON select path
+description: |
+  JSON utility to retrieve the JSON elements using JSONPath
+
+inputs:
+  json:
+    description: the input JSON document to select elements from
+    required: true
+  jsonpath:
+    description: the JSONPath expression to search
+    required: true
+
+outputs:
+  json:
+    description: JSON json of the matching terms
+    value: ${{ fromJSON(steps.search.outputs.json) }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        jsonpath-ng
+
+  - id: select
+    name: Select JSON path
+    shell: python
+    env:
+      inputs_json: ${{inputs.json}}
+      inputs_jsonpath: ${{inputs.jsonpath}}
+    run: |
+      import os, json, pprint
+      import jsonpath_ng.ext as jsonpath
+
+      inputs_json = os.getenv("inputs_json", "{}")
+      assert inputs_json is not None
+
+      inputs_path = os.getenv("inputs_path", '$')
+      assert inputs_path is not None
+      print(str(inputs_path))
+
+      data = json.loads(inputs_json)
+      pprint.pp(data)
+
+      jpath = jsonpath.parse(str(inputs_path))
+      print(jpath)
+
+      output = [m.value for m in jpath.find(data)]
+      pprint.pp(output)
+      json_out = json.dumps(json.dumps(output, sort_keys=True))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"json={json_out}")
+          print(f"json={json_out}", file=fh)
