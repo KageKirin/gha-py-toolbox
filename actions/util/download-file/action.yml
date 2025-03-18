@@ -1,0 +1,50 @@
+name: UTIL download file
+description: >
+  Downloads a file.
+
+inputs:
+  url:
+    description: URL of the file to download
+    required: true
+  file:
+    description: local path for the downloaded file
+    required: true
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download
+    name: Download
+    shell: python
+    env:
+      inputs_url: ${{inputs.url}}
+      inputs_file: ${{inputs.file}}
+    run: |
+      ## actions/util/download-file/action.yml#download
+      import os, sh, requests
+      from pathlib import Path
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      url = urlparse(os.getenv("inputs_url"))
+      assert url is not None
+
+      file = Path(os.getenv("inputs_file", "download"))
+      assert file is not None
+      file.parent.mkdir(parents=True, exist_ok=True)
+
+      with requests.get(url.geturl(), stream=True) as r:
+          if not r.ok:
+              print(f"failed to access {url} with status {r.status_code} {r.reason}")
+          assert r.ok
+          if r.ok:
+              with file.open("wb") as fh:
+                  shutil.copyfileobj(r.raw, fh)
