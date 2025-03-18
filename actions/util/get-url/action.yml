@@ -1,0 +1,52 @@
+name: UTIL get URL
+description: Retrieves the (text) content at the given URL.
+
+inputs:
+  url:
+    description: URL to retrieve content of
+    required: true
+
+outputs:
+  contents:
+    description: contents retrieved from input URL
+    value: ${{ steps.get-url.outputs.contents }}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: get-url
+    name: Get URL
+    shell: python
+    env:
+      inputs_url: ${{inputs.url}}
+    run: |
+      ## actions/util/get-url/action.yml#get-url
+      import os, requests
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      url = urlparse(os.getenv("inputs_url"))
+      assert url is not None
+
+      err = 0
+      contents = ""
+      with requests.get(url.geturl()) as r:
+          if not r.ok:
+              contents = f"{r.status_code}: {r.reason}"
+              print(f"failed to access {url} with status {r.status_code} {r.reason}")
+              err = r.status_code
+          if r.ok:
+              contents = r.text
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"contents={contents}")
+          print(f"contents={contents}", file=fh)
+
+      exit(err)
