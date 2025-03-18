@@ -1,0 +1,79 @@
+name: UTIL download files (fast) parallel
+description: >
+  Downloads files in parallel using cURL
+
+inputs:
+  urls:
+    description: >
+      URLs of the file to download
+      Whitespace-separated values
+    required: true
+  directory:
+    description: local download path for the downloaded files
+    required: true
+  path:
+    description: local base path for the action
+    required: false
+    default: ${{github.workspace}}
+  max-parallel:
+    description: count of parallel downloads
+    required: false
+    default: 4
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download
+    name: Download
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_urls: ${{inputs.urls}}
+      inputs_directory: ${{inputs.directory}}
+      inputs_max_parallel: ${{inputs.max-parallel}}
+    run: |
+      ## actions/util/download-files/action.yml#download
+      import os, shutil, requests
+      import multiprocessing as mp
+      from pathlib import Path
+      from contextlib import chdir
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_max_parallel = os.getenv("inputs_max_parallel", "4")
+      assert inputs_max_parallel is not None
+      max_parallel = int(inputs_max_parallel)
+      if max_parallel <= 0:
+          max_parallel = mp.cpu_count()
+
+      with chdir(os.getenv("inputs_path", ".")):
+          inputs_urls = os.getenv("inputs_urls", "")
+          assert inputs_urls is not None
+          urls = str(inputs_urls).split()
+
+          inputs_directory = os.getenv("inputs_directory", "download")
+          assert inputs_directory is not None
+          directory = Path(inputs_directory)
+          directory.parent.mkdir(parents=True, exist_ok=True)
+
+          def download(urlstr: str) -> int:
+            url = urlparse(urlstr)
+            command = f"curl -L -o {directory.join(Path(url.path).name)} {url.geturl()}"
+            err = os.waitstatus_to_exitcode(os.system(command))
+            if err:
+              print(f"failed to access {url})
+            return err
+
+          pool = mp.Pool(max_parallel)
+          results = pool.map_async(download, urls).get()
+
+          errors = sum(results)
+          exit(errors)
