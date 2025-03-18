@@ -1,0 +1,37 @@
+name: TEXT append to file
+description: |
+  Text utility action to append a given content string to a text file.
+
+inputs:
+  contents:
+    description: the input text to append
+    required: true
+  file:
+    description: the file to append to
+    required: true
+
+
+runs:
+  using: composite
+  steps:
+  - id: append
+    name: Append
+    shell: python
+    env:
+      inputs_contents: ${{ inputs.contents }}
+      inputs_file: ${{ inputs.file }}
+    run: |
+      ## actions/text/append-to-file/action.yml#append
+      import os
+      from pathlib import Path
+
+      inputs_contents = os.getenv("inputs_contents")
+      assert inputs_contents
+      contents = str(inputs_contents)
+
+      inputs_file = os.getenv("inputs_file")
+      assert inputs_file
+      file = Path(inputs_file)
+
+      with file.open("a") as fh:
+          print(contents, file=fh)
