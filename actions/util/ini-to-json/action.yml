@@ -1,0 +1,43 @@
+name: UTIL Ini to Json
+description: Parses a given Ini file into an equivalent dictionary, serialized as JSON.
+
+inputs:
+  ini:
+    description: ini contents to parse
+    required: true
+
+outputs:
+  json:
+    description: parsed ini contents written back as JSON
+    value: ${{ steps.parse-ini.outputs.json }}
+
+runs:
+  using: composite
+  steps:
+  - id: parse-ini
+    name: Parse ini
+    shell: python
+    env:
+      inputs_ini: ${{inputs.ini}}
+    run: |
+      ## actions/util/ini-to-json/action.yml#parse-ini
+      import os, pprint
+      from configparser import ConfigParser
+
+      inputs_ini = os.getenv("inputs_ini")
+      assert inputs_ini is not None
+
+      ini = str(inputs_ini)
+      config = ConfigParser()
+      config.read_string(inputs_ini)
+
+      out = {}
+      for section in config.sections():
+          out[section] = dict(config.items(section))
+
+      pprint.pp(out)
+      json_out = json.dumps(json.dumps(out, sort_keys=True))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"json={json_out}")
+          print(f"json={json_out}", file=fh)
