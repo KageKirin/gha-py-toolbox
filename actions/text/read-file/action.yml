@@ -1,0 +1,44 @@
+name: TEXT read file
+description: |
+  Text utility action to read the contents of a given text file to memory.
+
+inputs:
+  file:
+    description: the file to log
+    required: true
+
+outputs:
+  contents:
+    description: the contents of the file
+    value: ${{ fromJSON(steps.read.outputs.contents) }}
+
+
+runs:
+  using: composite
+  steps:
+  - id: read
+    name: Read
+    shell: python
+    env:
+      inputs_file: ${{ inputs.file }}
+    run: |
+      ## actions/text/read-file/action.yml#read
+      import os, json
+      from pathlib import Path
+
+      inputs_file = os.getenv("inputs_file")
+      assert inputs_file
+      file = Path(inputs_file)
+      contents = json.dumps(file.read_text())
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"contents={contents}")
+          print(f"contents={contents}", file=fh)
+
+  - id: verify
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/text/read-file/action.yml#verify
+      steps.read.outputs.contents
+      ${{ steps.read.outputs.contents }}
