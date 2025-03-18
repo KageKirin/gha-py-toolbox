@@ -1,0 +1,66 @@
+name: UTIL download files
+description: >
+  Downloads files.
+
+inputs:
+  urls:
+    description: >
+      URLs of the file to download
+      Whitespace-separated values
+    required: true
+  directory:
+    description: local download path for the downloaded files
+    required: true
+  path:
+    description: local base path for the action
+    required: false
+    default: ${{github.workspace}}
+
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download
+    name: Download
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_urls: ${{inputs.urls}}
+      inputs_directory: ${{inputs.directory}}
+    run: |
+      ## actions/util/download-files/action.yml#download
+      import os, shutil, requests
+      from pathlib import Path
+      from contextlib import chdir
+      from urllib.parse import urlparse
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(os.getenv("inputs_path", ".")):
+          inputs_urls = os.getenv("inputs_urls", "")
+          assert inputs_urls is not None
+          urls = str(inputs_urls).split()
+
+          inputs_directory = os.getenv("inputs_directory", "download")
+          assert inputs_directory is not None
+          directory = Path(inputs_directory)
+          directory.parent.mkdir(parents=True, exist_ok=True)
+
+          with url in [urlparse(u) for u in urls]:
+              with requests.get(url.geturl(), stream=True) as r:
+                  if not r.ok:
+                      print(
+                          f"failed to access {url} with status {r.status_code} {r.reason}"
+                      )
+                  assert r.ok
+                  if r.ok:
+                      file = directory.join(Path(url.path).name)
+                      with file.open("wb") as fh:
+                          shutil.copyfileobj(r.raw, fh)
