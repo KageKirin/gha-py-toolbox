@@ -1,0 +1,60 @@
+name: INSTALL (latest) nuget as tool
+description: >-
+  Installs latest NuGet tool.
+
+runs:
+  using: composite
+  steps:
+  - uses: kagekirin/gha-py-toolbox/actions/install/apt-get@main
+    with:
+      sudo: sudo
+      packages: |
+        mono-devel
+        nuget
+
+  - id: get-nuget-path
+    uses: kagekirin/gha-py-toolbox/actions/util/which@main
+    with:
+      what: nuget
+  - id: read-nuget-path
+    uses: kagekirin/gha-py-toolbox/actions/text/read-file@main
+    with:
+      file: ${{ steps.get-nuget-path.outputs.where }}
+  - id: extract-nuget-path
+    uses: kagekirin/gha-py-toolbox/actions/text/regex-search@main
+    with:
+      text: ${{ steps.read-nuget-path.outputs.contents }}
+      regex: \s+(/[^\s]*/[Nn][Uu][Gg][Ee][Tt].[Ee][Xx][Ee])\s*
+  - id: verify-intermediate-results
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/install/nuget-tool/action.yml#verify-intermediate-results
+      Path: ${{ steps.get-nuget-path.outputs.where }}
+
+      Contents:
+      ---
+      ${{ steps.read-nuget-path.outputs.contents }}
+      ---
+
+      NuGet.exe path:
+      ${{ steps.extract-nuget-path.outputs.matches }}
+
+      ${{ steps.extract-nuget-path.outputs.array }}
+
+  - id: update-nuget-exe
+    if: ${{ steps.extract-nuget-path.outputs.result }}
+    uses: kagekirin/gha-py-toolbox/actions/util/download-file@main
+    with:
+      url: https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+      file: ${{ steps.extract-nuget-path.outputs.matches }}
+
+  - id: nuget-help-after
+    name: NuGet help
+    shell: python
+    run: |
+      ## actions/install/nuget-tool/action.yml#nuget-help-after
+      import os
+
+      err = os.waitstatus_to_exitcode(os.system("nuget help"))
+      exit(err)
