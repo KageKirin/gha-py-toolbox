@@ -1,0 +1,23 @@
+name: INSTALL (latest) nuget as tool
+description: >-
+  Installs latest NuGet tool.
+
+runs:
+  using: composite
+  steps:
+  - uses: kagekirin/gha-py-toolbox/actions/install/apt-get@main
+    with:
+      sudo: sudo
+      packages: |
+        mono-devel
+        nuget
+
+  - id: get-nuget-path
+    uses: kagekirin/gha-py-toolbox/actions/util/which@main
+    with:
+      what: nuget
+  - id: update-nuget-exe
+    uses: kagekirin/gha-py-toolbox/actions/util/download-file@main
+    with:
+      url: https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+      file: ${{ steps.get-nuget-path.outputs.where }}
