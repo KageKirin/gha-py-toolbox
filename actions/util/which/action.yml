@@ -1,0 +1,41 @@
+name: UTIL which
+description: retrieves the absolute path to a tool on the $PATH, similar to `which <tool>`.
+
+inputs:
+  what:
+    description: tool/command name
+    required: true
+
+outputs:
+  where:
+    description: tool/command full path
+    value: ${{ steps.which.outputs.where }}
+
+runs:
+  using: composite
+  steps:
+  - id: which
+    name: which ${{ inputs.what }}
+    shell: python
+    env:
+      inputs_what: ${{inputs.what}}
+    run: |
+      ## actions/util/which/action.yml#which
+      import os, shutil
+
+      inputs_what = os.getenv("inputs_what", "")
+      assert inputs_what is not None
+      what = str(inputs_what)
+
+      where = shutil.which(what)
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"where={where}")
+          print(f"where={where}", file=fh)
+
+  - id: verify
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/util/which/action.yml#verify
+      steps.which.outputs.where
+      ${{ steps.which.outputs.where }}
