@@ -1,0 +1,187 @@
+name: JOB NuGet Publish Unity package
+description: >-
+  Job macro to publish Unity Editor as NuGet package.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  nuspec-file:
+    description: >
+      Nuspec file (.nuspec) describing the package.
+    required: false
+    default: '*.nuspec'
+
+  # Unity
+  unity-version:
+    description: >-
+      Unity version to install.
+      Refer to https://unity.com/releases/editor/archive for the correct version.
+    required: true
+    default: 6000.0.41f1
+  unity-changeset:
+    description: >-
+      Unity changeset to install.
+      Refer to https://unity.com/releases/editor/archive for the correct changeset.
+
+      NOTE: The changeset is part of the actual download URL, i.e. https://download.unity3d.com/download_unity/{changeset}
+      e.g.: https://download.unity3d.com/download_unity/46e447368a18/LinuxEditorInstaller/Unity-6000.0.41f1.tar.xz
+    required: true
+    default: 46e447368a18
+  unity-components:
+    description: >-
+      List of Unity components to install.
+
+      Multiline, use whitespace/newline to separate items.
+      Defaults to '', which is only the default Unity Editor without extra components.
+
+      Available components:
+
+      Linux-IL2CPP
+      Linux-Server
+      Mac-Mono
+      Mac-Server
+      Windows-Mono
+      Windows-Server
+      iOS
+      VisionOS
+      Android
+      WebGL
+    required: true
+    default: ''
+
+  # publishing
+  nuget-registry:
+    description: >-
+      NuGet registry to publish on.
+      Defaults to **GitHub NuGet**.
+    required: false
+    default: https://nuget.pkg.github.com/${{github.repository_owner}}/index.json
+  nuget-token:
+    description: >-
+      Authorization token for the above registry.
+      GitHub (Enterprise): requires 'packages:write' permissions.
+    required: false
+    default: ${{github.token}}
+  nuget-options:
+    description: >
+      supplementary command line options forwarded to `dotnet nuget push`
+      whitespace separated list.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+
+  - uses: kagekirin/gha-py-toolbox/actions/text/dump-to-file@main
+    with:
+      file: ${{ inputs.path }}/COMPONENTS.md
+      contents: |
+        # Unity ${{ inputs.unity-version }} - ${{ inputs.unity-changeset }}
+
+        ${{ inputs.unity-components }}
+
+  - id: log-components-md
+    name: Log COMPONENTS.md
+    uses: kagekirin/gha-py-toolbox/actions/text/log-file@main
+    with:
+      file: ${{ inputs.path }}/COMPONENTS.md
+
+
+  - id: get-nuspec-id
+    name: Get Nuspec Id
+    uses: kagekirin/gha-py-toolbox/actions/nuget/get-nuspec-id@main
+    with:
+      path: ${{ inputs.path }}
+      nuspec-file: ${{ inputs.nuspec-file }}
+
+  - id: compute-nuspec-id
+    name: Compute Nuspec Id
+    uses: kagekirin/gha-py-toolbox/actions/unity/compute-nuget-id@main
+    with:
+      nuget-id: ${{ steps.get-nuspec-id.outputs.id }}
+      unity-components: ${{ inputs.unity-components }}
+
+  - id: set-nuspec-id
+    name: Set Nuspec Id
+    uses: kagekirin/gha-py-toolbox/actions/nuget/set-nuspec-id@main
+    with:
+      path: ${{ inputs.path }}
+      nuspec-file: ${{ inputs.nuspec-file }}
+      id: ${{ steps.compute-nuspec-id.outputs.id }}
+
+
+  - id: compute-nuspec-version
+    name: Compute Nuspec Version
+    uses: kagekirin/gha-py-toolbox/actions/unity/compute-nuget-version@main
+    with:
+      unity-version: ${{ inputs.unity-version }}
+      unity-changeset: ${{ inputs.unity-changeset }}
+      unity-components: ${{ inputs.unity-components }}
+
+  - id: set-nuspec-version
+    name: Set Nuspec Version
+    uses: kagekirin/gha-py-toolbox/actions/nuget/set-nuspec-version@main
+    with:
+      path: ${{ inputs.path }}
+      nuspec-file: ${{ inputs.nuspec-file }}
+      version: ${{ steps.compute-nuspec-version.outputs.version }}
+
+  - id: log-nuspec
+    name: Log Nuspec
+    uses: kagekirin/gha-py-toolbox/actions/text/log-file@main
+    with:
+      file: ${{ inputs.path }}/${{ inputs.nuspec-file }}
+
+
+  - id: install-unity-requirements
+    name: Install Unity Requirements
+    uses: kagekirin/gha-py-toolbox/macros/unity/install-requirements@main
+
+  - id: install-unity
+    name: Install Unity
+    uses: kagekirin/gha-py-toolbox/actions/unity/installer-setup@main
+    with:
+      version: ${{ inputs.unity-version }}
+      changeset: ${{ inputs.unity-changeset }}
+      components: ${{ inputs.unity-components }}
+      unity-path: ${{ inputs.path }}/unity/native/linux-x64
+      unity-temp: ${{ inputs.path }}/.unity-temp
+      accept-license: true
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## jobs/unity/publish-editor-nuget/action.yml#verify-outputs
+      ## macros/unity/setup-activate/action.yml#verify-outputs
+      steps.install-unity.outputs.unity-exe
+      ${{steps.install-unity.outputs.unity-exe}}
+
+      steps.install-unity.outputs.editor-path
+      ${{steps.install-unity.outputs.editor-path}}
+
+
+  - id: nuget-pack
+    name: NuGet Pack
+    uses: kagekirin/gha-py-toolbox/actions/nuget/pack@main
+    with:
+      path: ${{ inputs.path }}
+      nuspec-project-file: ${{ inputs.nuspec-file }}
+      options: -Version ${{ steps.compute-nuspec-version.outputs.version }}
+
+  - id: dotnet-publish
+    name: Publish nupkgs
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/publish@main
+    with:
+      path: ${{ inputs.path }}
+      packages: '*.nupkg'
+      registry: ${{ inputs.nuget-registry }}
+      token: ${{ inputs.nuget-token }}
+      options: ${{ inputs.nuget-options }}
+    env:
+      GH_NUGET_USER: ${{ github.actor }}
+      GH_NUGET_TOKEN: ${{ inputs.nuget-token }}
