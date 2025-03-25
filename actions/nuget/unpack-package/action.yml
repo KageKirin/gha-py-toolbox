@@ -1,0 +1,52 @@
+name: NuGet Unpack a Nuget package
+description: >
+  Unpacks a .nupkg into a given target folder.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  package:
+    description: Package to unpack.
+    required: true
+
+  output-path:
+    description: Output directory where to unpack the package.
+    required: false
+    default: .
+
+
+runs:
+  using: composite
+  steps:
+  - id: unpack
+    name: Unpack
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_ouput_path: ${{inputs.ouput-path}}
+      inputs_package: ${{inputs.package}}
+    run: |
+      import os, sys
+      from pathlib import Path
+      from zipfile import ZipFile
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+      inputs_path = os.getenv("inputs_path", ".")
+      assert inputs_path is not None
+      path = Path(inputs_path)
+
+      with chdir(path):
+          inputs_package = os.getenv("inputs_package")
+          assert inputs_package is not None
+          package = Path(inputs_package)
+
+          inputs_ouput_path = os.getenv("inputs_ouput_path", ".")
+          assert inputs_ouput_path is not None
+          ouput_path = Path(inputs_ouput_path)
+
+          with ZipFile(package, 'r') as zip:
+              zip.extract_all(path=ouput_path)
