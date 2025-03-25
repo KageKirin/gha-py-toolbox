@@ -1,0 +1,68 @@
+name: NPM set package.json name
+description: >-
+  Sets the .name of a package.json file to the given parameter,
+  after validating it as NPM-compatible.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  package-json:
+    description: relative path to package.json
+    required: false
+    default: package.json
+  name:
+    description: name to set
+    required: true
+
+outputs:
+  name:
+    description: the name that was set after validation
+    value: ${{steps.set-name.outputs.name}}
+
+runs:
+  using: composite
+  steps:
+  - id: set-name
+    name: Set ${{inputs.package-json}} .name to ${{inputs.name}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_package_json: ${{inputs.package-json}}
+      inputs_name: ${{inputs.name}}
+    run: |
+      ## actions/npm/set-name/action.yml#set-name
+      import os, sys, json
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      packageJsonFile = Path(os.getenv("inputs_path")).joinpath(
+          os.getenv("inputs_package_json")
+      )
+      assert packageJsonFile is not None
+      if not packageJsonFile.exists():
+          exit(1)
+
+      packageJson = json.loads(packageJsonFile.read_text())
+      assert packageJson is not None
+      print(packageJson["name"])
+      if packageJson == None:
+          exit(2)
+
+      inputs_name = os.getenv("inputs_name")
+      assert inputs_name is not None
+      name = str(inputs_name)
+      assert name is not None
+      assert len(name) < 214
+      if len(name) >= 124:
+          exit(3)
+
+      packageJson["name"] = f"{name}".lower()
+      print(packageJson["name"])
+      packageJsonFile.write_text(json.dumps(packageJson, indent=2))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"name={name}")
+          print(f"name={name}", file=fh)
