@@ -1,0 +1,37 @@
+name: NPM set package version from tag
+description: >
+  Sets the version in a given package.json.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  package-json:
+    description: >
+      package.json file to set version of.
+    required: false
+    default: package.json
+
+outputs:
+  version:
+    description: the set version string
+    value: ${{ steps.set-package-version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+  - id: get-semver-tag
+    name: Get highest tag
+    uses: kagekirin/gha-py-toolbox/actions/git/get-highest-semver-tag@main
+    with:
+      path: ${{ inputs.path }}
+
+  - id: set-package-version
+    name: Set package version
+    uses: kagekirin/gha-py-toolbox/actions/npm/set-version@main
+    with:
+      path: ${{ inputs.path }}
+      package-json: ${{ inputs.package-json }}
+      version: ${{ steps.get-semver-tag.outputs.version }}
