@@ -1,0 +1,90 @@
+name: UNITY Compute NuGet Version
+description: >-
+  Helper action to compute a compatible NuGet-version
+  from a Unity version/changeset/components
+  for a NuGet package containing the Unity Editor.
+
+inputs:
+  unity-version:
+    description: >-
+      Unity version to install.
+      Refer to https://unity.com/releases/editor/archive for the correct version.
+    required: true
+    default: 6000.0.41f1
+  unity-changeset:
+    description: >-
+      Unity changeset to install.
+      Refer to https://unity.com/releases/editor/archive for the correct changeset.
+
+      NOTE: The changeset is part of the actual download URL, i.e. https://download.unity3d.com/download_unity/{changeset}
+      e.g.: https://download.unity3d.com/download_unity/46e447368a18/LinuxEditorInstaller/Unity-6000.0.41f1.tar.xz
+    required: true
+    default: 46e447368a18
+  unity-components:
+    description: >-
+      List of Unity components to install.
+
+      Multiline, use whitespace/newline to separate items.
+      Defaults to '', which is only the default Unity Editor without extra components.
+
+      Available components:
+
+      Linux-IL2CPP
+      Linux-Server
+      Mac-Mono
+      Mac-Server
+      Windows-Mono
+      Windows-Server
+      iOS
+      VisionOS
+      Android
+      WebGL
+    required: true
+    default: ''
+
+outputs:
+  nuget-version:
+    description: the resulting NuGet version
+    value: ${{ steps.compute-nuget-version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+  - id: compute-nuget-version
+    name: Compute NuGet Version
+    shell: python
+    env:
+      inputs_unity_version: ${{ inputs.unity-version }}
+      inputs_unity_changeset: ${{ inputs.unity-changeset }}
+      inputs_unity_components: ${{ inputs.unity-components }}
+    run: |
+      ## actions/unity/compute-nuget-version/action.yml#compute-nuget-version
+      import os, re, pprint
+      from hashlib import sha256
+
+      inputs_unity_version = os.getenv("inputs_unity_version")
+      assert inputs_unity_version is not None
+
+      inputs_unity_changeset = os.getenv("inputs_unity_changeset")
+      assert inputs_unity_changeset is not None
+
+      inputs_unity_components = os.getenv("inputs_unity_components")
+      assert inputs_unity_components is not None
+
+      unity_version = str(inputs_unity_version)
+      unity_changeset = str(inputs_unity_changeset)
+      unity_components = sorted(list(set(str(inputs_unity_components).split())))
+      pprint.pp(unity_components)
+
+      hash = sha256()
+      for c in unity_components:
+          hash.update(c.encode(encoding="ascii"))
+      print("hash (hex):", hash.hexdigest())
+
+      semver_version = re.search(r"(\d+\.\d+\.\d+)", unity_version).group(0)
+      version_suffix = unity_version.replace(semver_version, "")
+
+      version = f"{semver_version}-{version_suffix}+{unity_changeset}"
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"version={version}")
+          print(f"version={version}", file=fh)
