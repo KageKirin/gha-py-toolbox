@@ -1,0 +1,58 @@
+name: NuGet Get & Unpack Package
+description: >
+  Pulls and unpacks a NuGet package from a NuGet registry.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  output-path:
+    description: path where to unpack the downloaded package
+    required: false
+    default: .
+
+
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3
+  package:
+    description: >
+      Package name
+    required: true
+  version:
+    description: >
+      Package version.
+      Empty string (default) picks latest available version.
+    required: false
+    default: ''
+
+
+runs:
+  using: composite
+  steps:
+  - id: get-package
+    name: Get package
+    uses: kagekirin/gha-py-toolbox/actions/nuget/get-package@main
+    with:
+      token: ${{ inputs.token }}
+      registry: ${{ inputs.registry }}
+      package: ${{ inputs.package }}
+      version: ${{ inputs.version }}
+
+  - id: unpack-package
+    name: Unpack package
+    uses: kagekirin/gha-py-toolbox/actions/nuget/unpack-package@main
+    with:
+      path: ${{ inputs.path }}
+      output-path: ${{ inputs.output-path }}
+      package: ${{ steps.get-package.outputs.packages }}
