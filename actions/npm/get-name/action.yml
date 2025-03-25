@@ -1,0 +1,61 @@
+name: NPM get package.json name
+description: >-
+  Retrieves the .name of a package.json file
+  Validates name for NPM compatibility
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  package-json:
+    description: relative path to package.json
+    required: false
+    default: package.json
+
+outputs:
+  name:
+    description: the name that was set after validation
+    value: ${{steps.get-name.outputs.name}}
+
+runs:
+  using: composite
+  steps:
+  - id: get-name
+    name: Get ${{inputs.path}} .name
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_package_json: ${{inputs.package-json}}
+    run: |
+      ## actions/npm/get-name/action.yml#get-name
+      import os, sys, shlex, json
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      packageJsonFile = Path(os.getenv("inputs_path")).joinpath(
+          os.getenv("inputs_package_json")
+      )
+      assert packageJsonFile is not None
+      if not packageJsonFile.exists():
+          exit(1)
+
+      packageJson = json.loads(packageJsonFile.read_text())
+      assert packageJson is not None
+      print(packageJson["name"])
+      if packageJson == None:
+          exit(2)
+
+      name = packageJson["name"]
+      assert name is not None
+      print(name)
+      if name == None:
+          exit(3)
+      assert len(name) < 214
+      if len(name) >= 124:
+          exit(4)
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"name={name}")
+          print(f"name={name}", file=fh)
