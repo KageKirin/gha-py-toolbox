@@ -1,0 +1,200 @@
+name: UNITY MACRO Setup from NuGet & Activate
+description: >-
+  Macro to perform the following tasks:
+  * install requirements (libs) for running Unity
+  * install Unity from NuGet
+  * activate Unity license
+  * POST EXECUTION: deactivate Unity license
+
+  Returns the Unity installation path
+
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  unity-nuget-id:
+    description: A given (base) NuGet ID for Unity packages
+    required: true
+    default: 'UnityLinux'
+
+  unity-version:
+    description: >-
+      Unity version to install.
+      Refer to https://unity.com/releases/editor/archive for the correct version.
+    required: true
+    default: 2021.3.21f1
+  unity-changeset:
+    description: >-
+      Unity changeset to install.
+      Refer to https://unity.com/releases/editor/archive for the correct changeset.
+
+      NOTE: The changeset is part of the actual download URL, i.e. https://download.unity3d.com/download_unity/{changeset}
+      e.g.: https://download.unity3d.com/download_unity/1b156197d683/LinuxEditorInstaller/Unity-2021.3.21f1.tar.xz
+    required: true
+    default: 1b156197d683
+  unity-components:
+    description: >-
+      List of Unity components to install.
+
+      Multiline, use whitespace/newline to separate items.
+    required: true
+    default: |
+      Linux-IL2CPP
+      Linux-Server
+      WebGL
+  unity-path:
+    description: path where to install Unity to
+    required: true
+    default: .unity
+  unity-temp:
+    description: temp path where to download Unity installers to
+    required: true
+    default: .unitysetup
+  unity-verbose:
+    description: verbose output for both curl and tar (default is false)
+    required: true
+    default: 'false'
+
+  # Unity activation params
+  unity-email:
+    description: >-
+      User email required to activate license.
+    required: true
+  unity-password:
+    description: >-
+      User password required to activate license.
+    required: true
+  unity-serial:
+    description: >-
+      User serial required to activate license.
+    required: false
+  unity-license-file:
+    description: >-
+      User license file (.ulf) required to activate license.
+    required: false
+  unity-license-server:
+    description: >-
+      User license server URL (http://SERVER-IP-ADDRESS:PORT).
+
+      Internally `services-config.json` will be generated as follows:
+
+      ```json
+      {
+        "licensingServiceBaseUrl": inputs.unity-license-server,
+        "enableEntitlementLicensing": true,
+        "hubEnableWorkOffline": false,
+        "clientConnectTimeoutSec": inputs.timeout,
+        "clientHandshakeTimeoutSec": inputs.timeout
+      }
+      ```
+      @see: https://docs.unity.com/licensing/en-us/manual/ClientConfig
+    required: false
+
+  activation-timeout:
+    description: timeout in seconds between activation retries
+    required: false
+    default: '15'
+  activation-retries:
+    description: number of retries before giving up on the activation
+    required: false
+    default: '15'
+
+  accept-license:
+    description: >-
+      Whether you accept the Unity license.
+
+      Must be explicitly set by the caller.
+    required: true
+
+  mutex-variable:
+    description: >
+      name of the variable to use as mutex
+      activates mutex functionality if set.
+    required: false
+    default: ''
+  mutex-timeout:
+    description: timeout in seconds between retries
+    required: false
+    default: '30'
+  mutex-token:
+    description: GitHub token with variables:write access
+    required: true
+
+  token:
+    description: >
+      GitHub (Enterprise): token with "packages:read" permissions for the given repository.
+    required: false
+    default: ${{github.token}}
+  registry:
+    description: >
+      Registry URL from where to fetch the package, with the terminal path `index.json`, i.e. same format as NuGet.config
+      Defaults to official NuGet registry.
+    required: false
+    default: https://api.nuget.org/v3
+
+outputs:
+  unity-exe:
+    description: full path to Unity executable
+    value: ${{ steps.install-unity.outputs.unity-exe }}
+  editor-path:
+    description: full path to Unity installation folder
+    value: ${{ steps.install-unity.outputs.editor-path }}
+
+
+runs:
+  using: composite
+  steps:
+  - id: install-requirements
+    uses: kagekirin/gha-py-toolbox/macros/unity/install-requirements@main
+
+  - id: install-unity
+    uses: kagekirin/gha-py-toolbox/actions/unity/nuget-setup@main
+    with:
+      path: ${{ inputs.path }}
+      nuget-id: ${{ inputs.unity-nuget-id }}
+      version: ${{ inputs.unity-version }}
+      changeset: ${{ inputs.unity-changeset }}
+      components: ${{ inputs.unity-components }}
+      unity-path: ${{ inputs.unity-path }}
+      unity-temp: ${{ inputs.unity-temp }}
+      verbose: ${{ inputs.unity-verbose }}
+      accept-license: ${{ inputs.accept-license }}
+      token: ${{ inputs.token }}
+      registry: ${{ inputs.registry }}
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## macros/unity/setup-activate/action.yml#verify-outputs
+      steps.install-unity.outputs.unity-exe
+      ${{steps.install-unity.outputs.unity-exe}}
+
+      steps.install-unity.outputs.editor-path
+      ${{steps.install-unity.outputs.editor-path}}
+
+  - id: check-mutex
+    if: ${{ inputs.mutex-variable != '' }}
+    name: Check Mutex
+    uses: kagekirin/gha-py-toolbox/actions/gh/repo-variable-mutex@main
+    with:
+      variable: ${{ inputs.mutex-variable }}
+      timeout: ${{ inputs.mutex-timeout }}
+      token: ${{ inputs.mutex-token }}
+
+  - id: activate-unity
+    name: Activate Unity
+    uses: kagekirin/gha-py-toolbox/actions/unity/activate-license@main
+    with:
+      path: ${{ inputs.path }}
+      unity-exe: ${{ steps.install-unity.outputs.unity-exe }}
+      unity-email: ${{ inputs.unity-email }}
+      unity-password: ${{ inputs.unity-password }}
+      unity-serial: ${{ inputs.unity-serial }}
+      unity-license-file: ${{ inputs.unity-license-file }}
+      unity-license-server: ${{ inputs.unity-license-server }}
+      timeout: ${{ inputs.activation-timeout }}
+      retries: ${{ inputs.activation-retries }}
