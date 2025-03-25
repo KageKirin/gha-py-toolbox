@@ -1,0 +1,69 @@
+name: UNITY Compute NuGet ID
+description: >-
+  Helper action to compute the NuGet ID
+  for a NuGet package containing the Unity Editor.
+
+inputs:
+  nuget-id:
+    description: A given base NuGet ID, extracted e.g. from a nuspec.
+    required: true
+
+  unity-components:
+    description: >-
+      List of Unity components the package shall contain.
+
+      Multiline, use whitespace/newline to separate items.
+      Defaults to '', which is only the default Unity Editor without extra components.
+
+      Available components:
+
+      Linux-IL2CPP
+      Linux-Server
+      Mac-Mono
+      Mac-Server
+      Windows-Mono
+      Windows-Server
+      iOS
+      VisionOS
+      Android
+      WebGL
+    required: true
+    default: ''
+
+outputs:
+  nuget-id:
+    description: the resulting NuGet ID
+    value: ${{ steps.compute-nuspec-id.outputs.nuget_id }}
+
+runs:
+  using: composite
+  steps:
+  - id: compute-nuspec-id
+    name: Compute Nuspec Id
+    shell: python
+    env:
+      inputs_nuget_id: ${{ inputs.nuget-id }}
+      inputs_unity_components: ${{ inputs.unity-components }}
+    run: |
+      import os, pprint
+
+      inputs_nuget_id = os.getenv("inputs_nuget_id")
+      assert inputs_nuget_id is not None
+
+      inputs_unity_components = os.getenv("inputs_unity_components")
+      assert inputs_unity_components is not None
+
+      nuget_id = str(inputs_nuget_id)
+      unity_components = sorted(list(set(str(inputs_unity_components).split())))
+      pprint.pp(unity_components)
+
+      components = "".join(unity_components).replace("-", "")
+      if len(nuget_id) + len(components) > 99:
+          components = components.replace(".", "")
+
+      if len(components) > 0:
+          nuget_id = f"{nuget_id}.{components}"
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"nuget_id={nuget_id}")
+          print(f"nuget_id={nuget_id}", file=fh)
