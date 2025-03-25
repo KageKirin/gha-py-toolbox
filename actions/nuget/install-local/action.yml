@@ -1,0 +1,71 @@
+name: NuGet Install from local source
+description: >
+  Installs a Nuget package from a local source
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  source:
+    description: source folder containing the package to install
+    required: false
+    default: .
+
+  packages:
+    description: >
+      Packages to install.
+      Expects a whitespace-separated list, so use YAML `>`, `>-`, `|` or `|-`.
+    required: true
+
+  output-path:
+    description: >
+      Output directory where to install the packages.
+    required: false
+    default: .
+
+
+runs:
+  using: composite
+  steps:
+  - id: nuget-install-local
+    name: NuGet install (local source)
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_ouput_path: ${{inputs.ouput-path}}
+      inputs_packages: ${{inputs.packages}}
+      inputs_source: ${{inputs.source}}
+    run: |
+      ## actions/nuget/install-local/action.yml#nuget-install-local
+      import os, sys
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WORKSPACE", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      assert inputs_path is not None
+      path = Path(inputs_path)
+
+      with chdir(path):
+          inputs_packages = os.getenv("inputs_packages", "")
+          assert inputs_packages is not None
+          packages = str(inputs_packages).split()
+
+          inputs_source = os.getenv("inputs_source", ".")
+          assert inputs_source is not None
+          source = Path(inputs_source)
+
+          inputs_ouput_path = os.getenv("inputs_ouput_path", ".")
+          assert inputs_ouput_path is not None
+          ouput_path = Path(inputs_ouput_path)
+
+          err = 0
+          for package in packages:
+              command = f"nuget install {package} -Source {source} -OutputDirectory {ouput_path}"
+              print(command, flush=True)
+              nuget_err = os.waitstatus_to_exitcode(os.system(command))
+              err += nuget_err
+          exit(err)
