@@ -1,0 +1,71 @@
+name: UNITY Compute NPM package name
+description: >-
+  Helper action to compute the Package name
+  for a NPM package containing the Unity Editor.
+
+inputs:
+  name:
+    description: A given base Package name, extracted e.g. from a package.json.
+    required: true
+
+  unity-components:
+    description: >-
+      List of Unity components the package shall contain.
+
+      Multiline, use whitespace/newline to separate items.
+      Defaults to '', which is only the default Unity Editor without extra components.
+
+      Available components:
+
+      Linux-IL2CPP
+      Linux-Server
+      Mac-Mono
+      Mac-Server
+      Windows-Mono
+      Windows-Server
+      iOS
+      VisionOS
+      Android
+      WebGL
+    required: true
+    default: ''
+
+outputs:
+  name:
+    description: the resulting Package name
+    value: ${{ steps.compute-package-name.outputs.name }}
+
+runs:
+  using: composite
+  steps:
+  - id: compute-package-name
+    name: Compute Package name
+    shell: python
+    env:
+      inputs_name: ${{ inputs.name }}
+      inputs_unity_components: ${{ inputs.unity-components }}
+    run: |
+      ## actions/unity/compute-name/action.yml#compute-package-name
+      import os, pprint
+
+      inputs_name = os.getenv("inputs_name")
+      assert inputs_name is not None
+
+      inputs_unity_components = os.getenv("inputs_unity_components")
+      assert inputs_unity_components is not None
+
+      name = str(inputs_name)
+      unity_components = sorted(list(set(str(inputs_unity_components).split())))
+      pprint.pp(unity_components)
+
+      components = "".join(unity_components).replace("-", "")
+      if len(name) + len(components) > 214:
+          components = components.replace(".", "")
+
+      if len(components) > 0:
+          name = f"{name}.{components}"
+
+      name = name.lower()
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"name={name}")
+          print(f"name={name}", file=fh)
