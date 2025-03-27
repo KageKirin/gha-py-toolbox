@@ -1,0 +1,606 @@
+name: UNITY Checkout, Cross(platform) Build, NPM Pack & NPM Publish job
+description: >
+  Job action performing the following:
+  * checkout repo
+  * unity-cross-build
+  * npm-pack
+  * npm-publish
+
+inputs:
+  # common inputs
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{ github.workspace }}
+
+  unity-exe:
+    description: >-
+      Path to Unity executable.
+      This value is usually returned by the setup action.
+    required: true
+  project-path:
+    description: >-
+      Path to Unity project.
+      Defaults to same folder.
+    required: true
+    default: .
+
+  cache-artifacts:
+    description: >-
+      Whether to cache the build artifacts.
+      Caching allows follow up jobs to re-use the build artifacts from the job calling this macro.
+
+      This is especially useful for functionality and unit testing since rebuilding the application
+      might take some time.
+    required: false
+    default: false
+  cache-name:
+    description: >-
+      Name to give to cache
+    required: false
+    default: ${{runner.os}}-${{github.repository_id}}-${{github.head_ref}}-${{github.sha}}-${{github.run_id}}
+
+  # per target platform
+  build-linux-player:
+    description: Flag to set to true for building the Linux Player binary.
+    required: true
+    default: false
+  linux-player-output-path:
+    description: >-
+      Path to project output Linux Player binary.
+      Defaults to workspace/build/native/linux-x64
+    required: true
+    default: ./build/native/linux-x64
+  linux-player-app-name:
+    description: >-
+      Application name, i.e. output Linux Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame
+  linux-player-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildLinux64Player {buildpath}
+
+  build-linux-server:
+    description: Flag to set to true for building the Linux Server binary.
+    required: true
+    default: false
+  linux-server-output-path:
+    description: >-
+      Path to project output Linux Server binary.
+      Defaults to workspace/build/native/linux-x64
+    required: true
+    default: ./build/native/linux-x64
+  linux-server-app-name:
+    description: >-
+      Application name, i.e. output Linux Server binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame-server
+  linux-server-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget linux64 -standaloneBuildSubtarget server -build {buildpath}
+
+
+  build-macos-player:
+    description: Flag to set to true for building the MacOS Player binary.
+    required: true
+    default: false
+  macos-player-output-path:
+    description: >-
+      Path to project output MacOS Player binary.
+      Defaults to workspace/build/native/osx-arm64
+    required: true
+    default: ./build/native/osx-arm64
+  macos-player-app-name:
+    description: >-
+      Application name, i.e. output MacOS Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame.app
+  macos-player-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildOSXUniversalPlayer {buildpath}
+
+  build-macos-server:
+    description: Flag to set to true for building the MacOS Server binary.
+    required: true
+    default: false
+  macos-server-output-path:
+    description: >-
+      Path to project output MacOS Server binary.
+      Defaults to workspace/build/native/osx-arm64
+    required: true
+    default: ./build/native/osx-arm64
+  macos-server-app-name:
+    description: >-
+      Application name, i.e. output MacOS Server binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame-server.app
+  macos-server-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget osxuniversal -standaloneBuildSubtarget server -build {buildpath}
+
+
+  build-windows-player:
+    description: Flag to set to true for building the Windows Player binary.
+    required: true
+    default: false
+  windows-player-output-path:
+    description: >-
+      Path to project output Windows Player binary.
+      Defaults to workspace/build/native/windows-x64
+    required: true
+    default: ./build/native/windows-x64
+  windows-player-app-name:
+    description: >-
+      Application name, i.e. output Windows Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame.exe
+  windows-player-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildWindows64Player {buildpath}
+
+  build-windows-server:
+    description: Flag to set to true for building the Windows Server binary.
+    required: true
+    default: false
+  windows-server-output-path:
+    description: >-
+      Path to project output Windows Server binary.
+      Defaults to workspace/build/native/windows-x64
+    required: true
+    default: ./build/native/windows-x64
+  windows-server-app-name:
+    description: >-
+      Application name, i.e. output Windows Server binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame-server.exe
+  windows-server-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget win64 -standaloneBuildSubtarget server -build {buildpath}
+
+
+  build-ios:
+    description: Flag to set to true for building the iOS Player binary.
+    required: true
+    default: false
+  ios-output-path:
+    description: >-
+      Path to project output iOS Player binary.
+      Defaults to workspace/build/native/ios-arm64
+    required: true
+    default: ./build/native/ios-arm64
+  ios-app-name:
+    description: >-
+      Application name, i.e. output iOS Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame.app
+  ios-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget ios -build {buildpath}
+
+
+  build-tvos:
+    description: Flag to set to true for building the tvOS Player binary.
+    required: true
+    default: false
+  tvos-output-path:
+    description: >-
+      Path to project output tvOS Player binary.
+      Defaults to workspace/build/native/tvos-arm64
+    required: true
+    default: ./build/native/tvos-arm64
+  tvos-app-name:
+    description: >-
+      Application name, i.e. output tvOS Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame.app
+  tvos-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget tvos -build {buildpath}
+
+
+  build-visionos:
+    description: Flag to set to true for building the VisionOS Player binary.
+    required: true
+    default: false
+  visionos-output-path:
+    description: >-
+      Path to project output VisionOS Player binary.
+      Defaults to workspace/build/native/visionos-arm64
+    required: true
+    default: ./build/native/visionos-arm64
+  visionos-app-name:
+    description: >-
+      Application name, i.e. output VisionOS Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame.app
+  visionos-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget visionos -build {buildpath}
+
+
+  build-android:
+    description: Flag to set to true for building the Android Player binary.
+    required: true
+    default: false
+  android-output-path:
+    description: >-
+      Path to project output Android Player binary.
+      Defaults to workspace/build/native/android-arm64
+    required: true
+    default: ./build/native/android-arm64
+  android-app-name:
+    description: >-
+      Application name, i.e. output Android Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame.apk
+  android-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget android -build {buildpath}
+
+
+  build-webgl:
+    description: Flag to set to true for building the WebGL Player binary.
+    required: true
+    default: false
+  webgl-output-path:
+    description: >-
+      Path to project output WebGL Player binary.
+      Defaults tworkspace/./build/native/webgl
+    required: true
+    default: ./build/native/webgl
+  webgl-app-name:
+    description: >-
+      Application name, i.e. output WebGL Player binary name,
+      including file extension required for the platform.
+      Example: see default value below.
+    required: false
+    default: UnityGame.html
+  webgl-arguments:
+    description: >-
+      Build arguments forwarded as-is to Unity.
+
+      "-quit", "-batchmode" and "-nographics" are passed by default.
+      "-logfile -"
+
+      The argument for "-projectPath" is added from `inputs.project_path`.
+      Use the variable `{buildpath}` for indicating the build (output) path.
+      Example: default value below
+    required: true
+    default: -enablePackageManagerTraces -buildTarget webgl -build {buildpath}
+
+
+  ## inputs from actions/checkout@v4
+  repository:
+    description: Repository name with owner. For example, actions/checkout
+    default: ${{github.repository}}
+  ref:
+    description: >
+      The branch, tag or SHA to checkout. When checking out the repository that
+      triggered a workflow, this defaults to the reference or SHA for that
+      event.  Otherwise, uses the default branch.
+    default: ${{github.ref}}
+  token:
+    description: >
+      Personal access token (PAT) used to fetch the repository. The PAT is configured
+      with the local git config, which enables your scripts to run authenticated git
+      commands. The post-job step removes the PAT.
+
+
+      We recommend using a service account with the least permissions necessary.
+      Also when generating a new PAT, select the least scopes necessary.
+
+
+      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+    default: ${{github.token}}
+  ssh-key:
+    description: >
+      SSH key used to fetch the repository. The SSH key is configured with the local
+      git config, which enables your scripts to run authenticated git commands.
+      The post-job step removes the SSH key.
+
+
+      We recommend using a service account with the least permissions necessary.
+
+
+      [Learn more about creating and using
+      encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+  ssh-known-hosts:
+    description: >
+      Known hosts in addition to the user and global host key database. The public
+      SSH keys for a host may be obtained using the utility `ssh-keyscan`. For example,
+      `ssh-keyscan github.com`. The public key for github.com is always implicitly
+      added.
+  ssh-strict:
+    description: >
+      Whether to perform strict host key checking. When true, adds the options `StrictHostKeyChecking=yes`
+      and `CheckHostIP=no` to the SSH command line. Use the input `ssh-known-hosts`
+      to
+      configure additional hosts.
+    default: true
+  ssh-user:
+    description: >
+      The user to use when connecting to the remote SSH host. By default 'git' is
+      used.
+    default: git
+  persist-credentials:
+    description: Whether to configure the token or SSH key with the local git config
+    default: true
+  clean:
+    description: Whether to execute `git clean -ffdx && git reset --hard HEAD` before fetching
+    default: true
+  filter:
+    description: >
+      Partially clone against a given filter.
+      Overrides sparse-checkout if set.
+    default:
+  sparse-checkout:
+    description: >
+      Do a sparse checkout on given patterns.
+      Each pattern should be separated with new lines.
+    default:
+  sparse-checkout-cone-mode:
+    description: >
+      Specifies whether to use cone-mode when doing a sparse checkout.
+    default: true
+  fetch-depth:
+    description: Number of commits to fetch. 0 indicates all history for all branches and tags.
+    default: 1
+  show-progress:
+    description: Whether to show progress status output when fetching.
+    default: true
+  lfs:
+    description: Whether to download Git-LFS files
+    default: false
+  submodules:
+    description: >
+      Whether to checkout submodules: `true` to checkout submodules or `recursive`
+      to
+      recursively checkout submodules.
+
+
+      When the `ssh-key` input is not provided, SSH URLs beginning with `git@github.com:`
+      are
+      converted to HTTPS.
+    default: false
+  set-safe-directory:
+    description: Add repository path as safe.directory for Git global config by running `git config --global --add safe.directory <path>`
+    default: true
+  github-server-url:
+    description: The base URL for the GitHub instance that you are trying to clone from, will use environment defaults to fetch from the same instance that the workflow is running from unless specified. Example URLs are https://github.com or https://my-ghes-server.example.com
+    required: true
+    default: ${{github.server_url}}
+
+  # nuget package
+  nuspec-version-xpath:
+    description: >
+      XPath expression to locate the version.
+      WARNING: Defaults to //metadata/version.
+    required: true
+    default: //metadata/version
+  nuspec-file:
+    description: >
+      Nuspec file (.nuspec) to check for the version.
+      Defaults to *.nuspec and will take the first result.
+    required: false
+    default: '*.nuspec'
+
+  # publishing
+  npm-registry:
+    description: >-
+      NPM registry to publish on.
+      Defaults to **GitHub NPM**.
+    required: false
+    default: https://npm.pkg.github.com/@${{github.repository_owner}}
+  npm-token:
+    description: >-
+      Authorization token for the above registry.
+      GitHub (Enterprise): requires 'packages:write' permissions.
+    required: false
+    default: ${{github.token}}
+  npm-access:
+    description: >
+      The access-level (private or public) the published package shall have. Defaults
+      to public.
+    required: true
+    type: choice
+    options:
+    - private
+    - public
+    default: public
+
+runs:
+  using: composite
+  steps:
+  - id: checkout-build-pack
+    name: Checkout & (crossplatform) Build
+    uses: kagekirin/gha-py-toolbox/jobs/unity/checkout-cross-build-npm-pack@main
+    with:
+      path: ${{ inputs.path }}
+      unity-exe: ${{ inputs.unity-exe }}
+      project-path: ${{ inputs.project-path }}
+      cache-artifacts: ${{ inputs.cache-artifacts }}
+      cache-name: ${{ inputs.cache-name }}
+      build-linux-player: ${{ inputs.build-linux-player }}
+      linux-player-output-path: ${{ inputs.linux-player-output-path }}
+      linux-player-app-name: ${{ inputs.linux-player-app-name }}
+      linux-player-arguments: ${{ inputs.linux-player-arguments }}
+      build-linux-server: ${{ inputs.build-linux-server }}
+      linux-server-output-path: ${{ inputs.linux-server-output-path }}
+      linux-server-app-name: ${{ inputs.linux-server-app-name }}
+      linux-server-arguments: ${{ inputs.linux-server-arguments }}
+      build-macos-player: ${{ inputs.build-macos-player }}
+      macos-player-output-path: ${{ inputs.macos-player-output-path }}
+      macos-player-app-name: ${{ inputs.macos-player-app-name }}
+      macos-player-arguments: ${{ inputs.macos-player-arguments }}
+      build-macos-server: ${{ inputs.build-macos-server }}
+      macos-server-output-path: ${{ inputs.macos-server-output-path }}
+      macos-server-app-name: ${{ inputs.macos-server-app-name }}
+      macos-server-arguments: ${{ inputs.macos-server-arguments }}
+      build-windows-player: ${{ inputs.build-windows-player }}
+      windows-player-output-path: ${{ inputs.windows-player-output-path }}
+      windows-player-app-name: ${{ inputs.windows-player-app-name }}
+      windows-player-arguments: ${{ inputs.windows-player-arguments }}
+      build-windows-server: ${{ inputs.build-windows-server }}
+      windows-server-output-path: ${{ inputs.windows-server-output-path }}
+      windows-server-app-name: ${{ inputs.windows-server-app-name }}
+      windows-server-arguments: ${{ inputs.windows-server-arguments }}
+      build-ios: ${{ inputs.build-ios }}
+      ios-output-path: ${{ inputs.ios-output-path }}
+      ios-app-name: ${{ inputs.ios-app-name }}
+      ios-arguments: ${{ inputs.ios-arguments }}
+      build-tvos: ${{ inputs.build-tvos }}
+      tvos-output-path: ${{ inputs.tvos-output-path }}
+      tvos-app-name: ${{ inputs.tvos-app-name }}
+      tvos-arguments: ${{ inputs.tvos-arguments }}
+      build-visionos: ${{ inputs.build-visionos }}
+      visionos-output-path: ${{ inputs.visionos-output-path }}
+      visionos-app-name: ${{ inputs.visionos-app-name }}
+      visionos-arguments: ${{ inputs.visionos-arguments }}
+      build-android: ${{ inputs.build-android }}
+      android-output-path: ${{ inputs.android-output-path }}
+      android-app-name: ${{ inputs.android-app-name }}
+      android-arguments: ${{ inputs.android-arguments }}
+      build-webgl: ${{ inputs.build-webgl }}
+      webgl-output-path: ${{ inputs.webgl-output-path }}
+      webgl-app-name: ${{ inputs.webgl-app-name }}
+      webgl-arguments: ${{ inputs.webgl-arguments }}
+      repository: ${{ inputs.repository }}
+      ref: ${{ inputs.ref }}
+      token: ${{ inputs.token }}
+      ssh-key: ${{ inputs.ssh-key }}
+      ssh-known-hosts: ${{ inputs.ssh-known-hosts }}
+      ssh-strict: ${{ inputs.ssh-strict }}
+      ssh-user: ${{ inputs.ssh-user }}
+      persist-credentials: ${{ inputs.persist-credentials }}
+      clean: ${{ inputs.clean }}
+      filter: ${{ inputs.filter }}
+      sparse-checkout: ${{ inputs.sparse-checkout }}
+      sparse-checkout-cone-mode: ${{ inputs.sparse-checkout-cone-mode }}
+      fetch-depth: ${{ inputs.fetch-depth }}
+      show-progress: ${{ inputs.show-progress }}
+      lfs: ${{ inputs.lfs }}
+      submodules: ${{ inputs.submodules }}
+      set-safe-directory: ${{ inputs.set-safe-directory }}
+      github-server-url: ${{ inputs.github-server-url }}
+
+      package-json: ${{ inputs.package-json }}
+
+  - id: npm-publish
+    name: NPM publish
+    uses: kagekirin/gha-py-toolbox/actions/npm/publish@main
+    with:
+      path: ${{ inputs.project-path }}
+      registry: ${{ inputs.npm-registry }}
+      token: ${{ inputs.npm-token }}
+      access: ${{ inputs.npm-access }}
+      package-file: ${{ steps.checkout-build-pack.outputs.packagefile }}
