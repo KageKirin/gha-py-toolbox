@@ -1,0 +1,135 @@
+name: npm-pack
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+      max-parallel:
+        description: Number of maximum parallel runners
+        type: number
+        default: 2
+        required: false
+      package-json:
+        description: relative path to package.json
+        type: string
+        required: false
+        default: package.json
+      package:
+        description: >
+          Package name.
+          Overrides the package name already set in package.json.
+
+          May include the scope if the scope is part of the package name (the way it's
+          handled for regular NPM packages).
+          Note: might also require to write the package name (e.g.) `@scope/package-name`
+          as
+          either `%40scope%2Fpackage-name` or `@scope%2Fpackage-name` depending on the
+          registry server.
+
+          GitHub (Enterprise): add scope to registry URL and not to package name.
+          Unity/UPM: `package-name` includes the tld-scope, i.e. `tld.owner.packagename`
+        type: string
+        required: false
+      targets:
+        description: |-
+          JSON array of registries to target (shorthand), e.g. `'["github", "gcp-upm", "gcp-avatar-upm"]'`
+          NOTE: Google Cloud-based target registries MUST start with `gcp`
+        type: string
+        required: true
+      include:
+        description: |-
+          JSON array of matrix.input combinations to target, expanding on targets,
+          e.g. ```
+          '[{
+              "target": "github",
+              "registry": "https://npm.pkg.github.com/@$GITHUB_REPOSITORY_OWNER",
+              "token": "GH_PACKAGE_TOKEN"
+            },
+            {
+              "target": "nodejs",
+              "registry": "https://registry.npmjs.org",
+              "token": "NPMJS_ORG_TOKEN"
+            },
+            {
+              "target": "gcp-my-repo",
+              "registry": "https://region-npm.pkg.dev/my/repo/",
+              "token": "GITHUB_TOKEN",
+              "credentials-json": "GCP_CREDENTIALS_JSON"
+            }
+          ]'
+          ```
+        type: string
+        required: true
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: true
+      GH_READONLY_TOKEN:
+        description: Read-only repository access token (repo:read)
+        required: true
+      GH_PACKAGE_TOKEN:
+        description: GitHub Package registry token (packages:read)
+        required: true
+
+
+jobs:
+  pack:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      contents: read
+      packages: write # allow GITHUB_TOKEN to publish packages
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        target: ${{ fromJson(inputs.targets) }}
+        include: ${{ fromJson(inputs.include) }}
+    env:
+      GH_NUGET_USER: ${{github.actor}}
+      GH_NUGET_TOKEN: ${{secrets.GH_PACKAGE_TOKEN}}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{secrets.GHP_TOKEN}}
+        systems: |
+          python
+          dotnet
+    - uses: kagekirin/gha-py-toolbox/actions/ssh/add-public-host-key@main
+      with:
+        hostname: github.dena.jp
+
+    - id: npm-pack
+      uses: kagekirin/gha-py-toolbox/jobs/npm/checkout-pack@main
+      with:
+        lfs: true
+        token: ${{ secrets.GH_READONLY_TOKEN }}
+        persist-credentials: true
+        package-json: ${{ inputs.package-json }}
+        registry: ${{ matrix.registry }}
+        package: ${{ inputs.package }}
+
+    - id: verify-outputs
+      name: Verify
+      shell: cat {0}
+      run: |
+        steps.npm-pack.outputs.packagefile
+        ${{steps.npm-pack.outputs.packagefile}}
+
+    - id: install-gcpsdk
+      if: ${{startsWith(matrix.target, 'gcp')}}
+      name: Install Google Cloud SDK
+      uses: kagekirin/gha-py-toolbox/actions/gcloud/setup@main
+    - id: activate-gcpsdk
+      if: ${{startsWith(matrix.target, 'gcp')}}
+      name: Activate Google Cloud SDK
+      uses: kagekirin/gha-py-toolbox/actions/gcloud/activate-service-account@main
+      with:
+        credentials: ${{secrets[matrix.credentials-json]}}
