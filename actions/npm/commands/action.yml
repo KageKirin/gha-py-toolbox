@@ -1,0 +1,114 @@
+name: NPM commands
+description: >
+  Script to run a set of npm commands.
+  Use env to set environment variables.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  commands:
+    description: >
+      commands to run.
+      newline separated list.
+      e.g.
+      ```
+        build
+        pack
+        run <script>
+      ```
+      defaults to empty string, i.e. `npm` without arguments
+    required: false
+    default: ''
+  cache:
+    description: >
+      path(s) to cache for build artifacts.
+      empty (default): no cache
+    required: false
+    default: ''
+
+
+runs:
+  using: composite
+  steps:
+  - id: prepare-cache-hash
+    if: ${{inputs.cache != ''}}
+    name: Prepare cache hash
+    shell: python
+    env:
+      build_ref: ${{github.ref}}
+      build_base: ${{github.base_ref}}
+      build_head: ${{github.head_ref}}
+      build_sha: ${{github.sha}}
+      build_cache: ${{inputs.cache}}
+      build_path: ${{inputs.path}}
+      build_projects: ${{inputs.projects}}
+      build_options: ${{inputs.options}}
+    run: |
+      ## actions/npm/commands/action.yml#prepare-cache-hash
+      import os
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with Path(".buildcache").open("w") as fh:
+          print(str(os.getenv("build_ref")), fh)
+          print(str(os.getenv("build_base")), fh)
+          print(str(os.getenv("build_head")), fh)
+          print(str(os.getenv("build_sha")), fh)
+          print(str(os.getenv("build_cache")), fh)
+          print(str(os.getenv("build_path")), fh)
+          print(str(os.getenv("build_commands")), fh)
+          print(str(os.getenv("build_frameworks")), fh)
+          print(str(os.getenv("build_projects")), fh)
+          print(str(os.getenv("build_options")), fh)
+
+  - id: cache
+    if: ${{inputs.cache != ''}}
+    name: Cache artifacts
+    uses: actions/cache@v4
+    env:
+      cache-name: cache-build-artifacts
+    with:
+      path: ${{inputs.cache}}
+      key: ${{runner.os}}-build-${{env.cache-name}}-${{github.sha}}-${{hashFiles('.buildcache','**/*.csproj','**/*.props','**/*.targets')}}
+      restore-keys: |
+        ${{runner.os}}-build-${{env.cache-name}}-${{github.sha}}-${{hashFiles('.buildcache','**/*.csproj','**/*.props','**/*.targets')}}
+        ${{runner.os}}-build-${{env.cache-name}}-${{github.sha}}-
+        ${{runner.os}}-build-${{env.cache-name}}-
+        ${{runner.os}}-build-
+
+  - id: build
+    name: Build
+    shell: python
+    env:
+      build_path: ${{inputs.path}}
+      build_commands: ${{inputs.commands}}
+    run: |
+      ## actions/npm/commands/action.yml#build
+      import os, sys, itertools, subprocess, pprint
+      from pathlib import Path
+      from contextlib import chdir
+      from subprocess import CalledProcessError
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      with chdir(str(os.getenv("build_path"))):
+          commands = list(str(os.getenv("build_commands")).splitlines())
+
+          if len(commands) == 0:
+              commands.append("")
+
+          err = 0
+          for cmd in commands:
+              try:
+                  print(f"running `{cmd}`")
+                  pprint.pp(os.environ)
+                  command = f"npm {cmd}"
+                  print(command, flush=True)
+                  subprocess.check_call(command.split())
+              except CalledProcessError as ex:
+                  print(f"ERROR: {ex}")
+                  err = ex.returncode
+          exit(err)
