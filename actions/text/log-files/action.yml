@@ -1,0 +1,36 @@
+name: TEXT log files
+description: |
+  Text utility action to log the contents of several text files.
+
+inputs:
+  files:
+    description: the files to log
+    required: true
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        chardet
+
+  - id: log
+    name: Log
+    shell: python
+    env:
+      inputs_files: ${{ inputs.files }}
+    run: |
+      ## actions/text/log-files/action.yml#log
+      import os, chardet
+      from pathlib import Path
+
+      files = str(os.getenv("inputs_files", "")).split()
+      assert files
+
+      for file in [Path(f) for f in files]:
+          print(file, file.is_file())
+          info = chardet.detect(file.read_bytes())
+          print(file.read_text(encoding=info["encoding"]))
