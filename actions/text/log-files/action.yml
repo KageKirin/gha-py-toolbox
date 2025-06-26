@@ -1,0 +1,28 @@
+name: TEXT log files
+description: |
+  Text utility action to log the contents of several text files.
+
+inputs:
+  files:
+    description: the files to log
+    required: true
+
+
+runs:
+  using: composite
+  steps:
+  - id: log
+    name: Log
+    shell: python
+    env:
+      inputs_files: ${{ inputs.files }}
+    run: |
+      ## actions/text/log-file/action.yml#log
+      import os
+      from pathlib import Path
+
+      files = str(os.getenv("inputs_files", "")).split()
+      assert files
+
+      for file in [Path(f) for f in files]:
+        print(file.read_text())
