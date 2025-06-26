@@ -1,0 +1,61 @@
+name: .NET Test
+description: >
+  Script to test .NET Solution or Projects
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  configurations:
+    description: >
+      configuration(s) to test for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to test for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to test
+      empty string (default) defers to project defaults
+      whitespace separated list. can use glob pattern.
+      empty string (default) defers to solution.
+    required: false
+    default: ''
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet test`
+      whitespace separated list.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+  - id: test
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/test@main
+    with:
+      path: ${{inputs.path}}
+      projects: ${{inputs.tests != '' && inputs.tests || inputs.projects}}
+      configurations: ${{inputs.configurations}}
+      frameworks: ${{inputs.frameworks}}
+      options: ${{inputs.options}}
+  - id: get-log
+    if: ${{ always() }}
+    uses: kagekirin/gha-py-toolbox/actions/util/locate-files@main
+    with:
+      path: ${{ inputs.path }}
+      patterns: '**/*.log'
+      depth: -1
+  - id: display-log
+    if: ${{ always() }}
+    uses: kagekirin/gha-py-toolbox/actions/text/log-files@main
+    with:
+      files: ${{steps.get-log.outputs.files}}
