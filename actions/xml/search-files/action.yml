@@ -1,0 +1,98 @@
+name: XML search-files
+description: |
+  XML utility action to serach for a given XPath inside a set of XML files.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  files:
+    description: the files to search in
+    required: true
+  xpath:
+    description: the XPath expression to search
+    required: true
+
+outputs:
+  matches:
+    description: the files that matched the XPath expression
+    value: ${{fromJSON(steps.search-xml.outputs.matches)}}
+  results:
+    description: JSON string, dictionary mapping matching files to their respective XPath value
+    value: ${{fromJSON(steps.search-xml.outputs.results)}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: search-xml
+    name: Log
+    shell: python
+    env:
+      inputs_path: ${{ inputs.path }}
+      inputs_files: ${{ inputs.files }}
+      inputs_xpath: ${{ inputs.xpath }}
+    run: |
+      ## actions/xml/search-files/action.yml#search-xml
+      import os, sys, re, json, pprint, itertools
+      from pathlib import Path
+      from contextlib import chdir
+      from lxml import etree
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      parser = etree.XMLParser(remove_blank_text=True)
+
+      xpath_ = os.getenv("inputs_xpath")
+      assert xpath_ is not None
+      xpath = etree.XPath(xpath_)
+
+      files_ = os.getenv("inputs_files")
+      assert files_ is not None
+      files = str(files_).split()
+
+      results = dict()
+
+      with chdir(os.getenv("inputs_path", ".")):
+          for file in itertools.chain.from_iterable(
+              [Path(".").rglob(f) for f in files]
+          ):
+              print(file)
+              assert file.is_file()
+
+              for node in xpath(root):
+            if str(file) not in results:
+                results[str(file)] = []
+            print(node.text)
+            results[str(file)].append(node.text)
+
+      matches = list(results.keys())
+      print(matches)
+      matches_json_escaped = json.dumps("\n".join(matches)) #json.dumps(json.dumps(matches, sort_keys=True))
+      results_json_escaped = json.dumps(json.dumps(results, sort_keys=True))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"matches={matches_json_escaped}")
+          print(f"matches={matches_json_escaped}", file=fh)
+          print(f"results={results_json_escaped}")
+          print(f"results={results_json_escaped}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/xml/search-files/action.yml#verify-outputs
+      steps.search-xml.outputs.matches
+      ${{steps.search-xml.outputs.matches}}
+      ${{fromJSON(steps.search-xml.outputs.matches)}}
+
+      steps.search-xml.outputs.results
+      ${{steps.search-xml.outputs.results}}
+      ${{fromJSON(steps.search-xml.outputs.results)}}
