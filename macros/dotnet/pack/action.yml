@@ -1,0 +1,74 @@
+name: .NET MACRO Pack
+description: >
+  Macro action performing the following:
+  * Search projects that have property IsPackable set to true (note: ignores project-wide props)
+  * dotnet-pack those projects
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  configurations:
+    description: >
+      configuration(s) to build for (Debug, Release, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  frameworks:
+    description: >
+      framework(s) to build for (net8.0, netstandard2.1, ...).
+      empty string (default) defers to project/solution defaults.
+      whitespace separated list.
+    required: false
+    default: ''
+  projects:
+    description: >
+      project(s) to build
+      whitespace separated list. can use glob pattern.
+      default: searching in all .csproj files
+    required: false
+    default: '***/*.csproj'
+
+  options:
+    description: >
+      supplementary command line options forwarded to `dotnet pack`
+      whitespace separated list.
+    required: false
+    default: ''
+  filter-packages:
+    description: >
+      optional set of regular expressions to filter out packages to not publish.
+      whitelist, i.e. only matching packages will be published.
+      empty string (default) is equivalent to /.*/ (match all)
+    required: false
+    default: ''
+
+
+outputs:
+  packages:
+    description: >
+      whitespace-separated list of created .nupkg files
+    value: ${{steps.pack.outputs.packages}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: search-files
+    uses: kagekirin/gha-py-toolbox/actions/xml/search-files@main
+    with:
+      path: ${{ inputs.path }}
+      files: ${{ inputs.projects }}
+      xpath: //IsPackable[text()="true"]
+
+  - id: pack
+    uses: kagekirin/gha-py-toolbox/actions/dotnet/pack@main
+    with:
+      path: ${{ inputs.path }}
+      projects: ${{ steps.search-files.outputs.matches }}
+      configurations: ${{ inputs.configurations }}
+      frameworks: ${{ inputs.frameworks }}
+      options: ${{ inputs.options }}
+      filter-packages: ${{ inputs.filter-packages }}
