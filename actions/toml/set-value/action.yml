@@ -1,0 +1,133 @@
+name: TOML set value
+description: >-
+  Retrieves the value for a given TOMLpath.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  toml-file:
+    description: relative path to TOML file to parse
+    required: false
+  toml-text:
+    description: alternative TOML text to parse
+    required: false
+  toml-path:
+    description: TOML path expression to set value for.
+    required: true
+  toml-value:
+    description: TOML value to update. Can be object, but must be escaped as string.
+    required: true
+
+outputs:
+  value:
+    description: the retrieved and updated value
+    value: ${{steps.set-value.outputs.value}}
+  toml:
+    description: the whole updated TOML document
+    value: ${{steps.set-value.outputs.toml}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        jsonpath-ng
+        detect-indent
+        toml
+
+  - id: set-value
+    name: set ${{inputs.path}} .${{inputs.toml-path}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_toml_file: ${{inputs.toml-file}}
+      inputs_toml_text: ${{inputs.toml-text}}
+      inputs_toml_path: ${{inputs.toml-path}}
+      inputs_toml_value: ${{inputs.toml-value}}
+    run: |
+      ## actions/toml/set-value/action.yml#set-value
+      import os, sys, json, toml, pprint
+      import jsonpath_ng.ext as jsonpath
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_toml_file = os.getenv("inputs_toml_file")
+      inputs_toml_text = os.getenv("inputs_toml_text")
+      inputs_toml_path = os.getenv("inputs_toml_path")
+      inputs_toml_value = os.getenv("inputs_toml_value")
+
+      toml_path = jsonpath.parse(str(inputs_toml_path))
+      print(toml_path)
+
+      write_file = False
+      toml_text = None
+      if inputs_toml_file is not None:
+          toml_file = Path(inputs_path).joinpath(inputs_toml_file)
+          write_file = True
+          assert toml_file.exists()
+          if not toml_file.exists():
+              print(f"{toml_file} does not exist")
+              exit(1)
+
+          toml_text = toml_file.read_text()
+
+      if inputs_toml_text is not None:
+          toml_text = str(inputs_toml_text)
+
+      assert toml_text is not None
+      assert toml_text != ""
+      print(toml_text)
+      toml_data = toml.loads(toml_text)
+      assert toml_data is not None
+      if toml_data is None:
+          print(f"{toml_text} could not be parsed")
+          exit(2)
+
+
+      assert inputs_toml_value is not None
+      if inputs_toml_value is None:
+          print("no input value")
+          exit(3)
+
+      toml_value = (
+          toml.loads(inputs_toml_value)
+          if "=" in inputs_toml_value
+          else inputs_toml_value
+      )
+      assert toml_value is not None
+      if toml_value is None:
+          print(f"{inputs_toml_value} could not be parsed")
+          exit(4)
+      print(toml_value)
+
+      print("retrieving data:")
+      pprint.pp([m.value for m in toml_path.find(toml_data)])
+
+      print("updating data:")
+      toml_path.update(toml_data, toml_value)
+
+      print("retrieving updated data:")
+      output = [m.value for m in toml_path.find(toml_data)]
+      pprint.pp(output)
+
+      value = None
+      if len(output) > 1 or type(output) is dict:
+          value = json.dumps(json.dumps(output, sort_keys=True))
+      elif type(output[0]) is dict:
+          value = json.dumps(json.dumps(output[0], sort_keys=True))
+      else:
+          value = json.dumps(output[0])
+
+      toml_update = json.dumps(json.dumps(toml_data, sort_keys=True))
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"value={value}")
+          print(f"value={value}", file=fh)
+          print(f"toml={toml_update}")
+          print(f"toml={toml_update}", file=fh)
