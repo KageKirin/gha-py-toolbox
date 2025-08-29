@@ -1,0 +1,91 @@
+name: JSON get value
+description: >-
+  Retrieves the value for a given JSONpath.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  json-file:
+    description: relative path to JSON file to parse
+    required: false
+  json-text:
+    description: alternative JSON text to parse
+    required: false
+  json-path:
+    description: JSON path expression to get value for.
+    required: true
+
+outputs:
+  value:
+    description: the retrieved value
+    value: ${{steps.get-value.outputs.value}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        jsonpath-ng
+        detect-indent
+
+  - id: get-value
+    name: Get ${{inputs.path}} .${{inputs.json-path}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_json_file: ${{inputs.json-file}}
+      inputs_json_text: ${{inputs.json-text}}
+      inputs_json_path: ${{inputs.json-path}}
+    run: |
+      import os, sys, json, pprint
+      import jsonpath_ng.ext as jsonpath
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_json_file = os.getenv("inputs_json_file")
+      inputs_json_text = os.getenv("inputs_json_text")
+      inputs_json_path = os.getenv("inputs_json_path")
+
+      json_path = jsonpath.parse(str(inputs_json_path))
+      print(json_path)
+
+      json_text = None
+      if inputs_json_file is not None:
+        json_file = Path(inputs_path).joinpath(inputs_json_file)
+        assert json_file.exists()
+        if not json_file.exists():
+          print(f"{json_file} does not exist")
+          exit(1)
+
+        json_text = json_file.read_text()
+
+      if inputs_json_text is not None:
+        json_text = str(inputs_json_text)
+
+      json_data = json.loads(json_text)
+      assert json_data is not None
+      if json_data is None:
+        print(f"{json_text} could not be parsed")
+        exit(2)
+
+      print("retrieving data:")
+      output = [m.value for m in json_path.find(json_data)]
+      pprint.pp(output)
+
+      value = None
+      if len(output) > 1 or type(output) is dict:
+        value = json.dumps(json.dumps(output, sort_keys=True))
+      elif type(output[0]) is dict:
+        value = json.dumps(json.dumps(output[0], sort_keys=True))
+      else:
+        value = json.dumps(output[0])
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"value={value}")
+          print(f"value={value}", file=fh)
