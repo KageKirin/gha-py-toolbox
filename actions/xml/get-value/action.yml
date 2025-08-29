@@ -1,0 +1,96 @@
+name: XML get value
+description: >-
+  Retrieves the value for a given XMLpath.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  xml-file:
+    description: relative path to XML file to parse
+    required: false
+  xml-text:
+    description: alternative XML text to parse
+    required: false
+  xml-path:
+    description: XML path expression to get value for.
+    required: true
+
+outputs:
+  value:
+    description: the retrieved value
+    value: ${{steps.get-value.outputs.value}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        lxml
+
+  - id: get-value
+    name: Get ${{inputs.path}} .${{inputs.xml-path}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_xml_file: ${{inputs.xml-file}}
+      inputs_xml_text: ${{inputs.xml-text}}
+      inputs_xml_path: ${{inputs.xml-path}}
+    run: |
+      ## actions/xml/get-value/action.yml#get-value
+      import os, sys, json, pprint
+      import xmltodict
+      from lxml import etree
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_xml_file = os.getenv("inputs_xml_file")
+      inputs_xml_text = os.getenv("inputs_xml_text")
+      inputs_xml_path = os.getenv("inputs_xml_path")
+
+      xml_path = str(inputs_xml_path)
+      print(xml_path)
+
+      xml_text = None
+      if inputs_xml_file is not None:
+          xml_file = Path(inputs_path).joinpath(inputs_xml_file)
+          assert xml_file.exists()
+          if not xml_file.exists():
+              print(f"{xml_file} does not exist")
+              exit(1)
+
+          xml_text = xml_file.read_text()
+
+      if inputs_xml_text is not None:
+          xml_text = str(inputs_xml_text)
+
+
+      xml_parser = etree.XMLParser(remove_blank_text=True)
+      xml_data = etree.fromstring(xml_text, xml_parser)
+      assert xml_data is not None
+      if xml_data is None:
+          print(f"{xml_text} could not be parsed")
+          exit(2)
+
+      pprint.pp(xmltodict.parse(etree.tostring(xml_data)))
+
+      print("retrieving data:")
+      output = [xmltodict.parse(etree.tostring(m)) for m in xml_data.xpath(xml_path)]
+      pprint.pp(output)
+
+      value = None
+      if len(output) > 1 or type(output) is dict:
+          value = json.dumps(json.dumps(output, sort_keys=True))
+      elif type(output[0]) is dict:
+          value = json.dumps(json.dumps(output[0], sort_keys=True))
+      else:
+          value = json.dumps(output[0])
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"value={value}")
+          print(f"value={value}", file=fh)
