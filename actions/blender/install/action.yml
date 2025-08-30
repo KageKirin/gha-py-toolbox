@@ -1,0 +1,135 @@
+name: BLENDER install
+description: >-
+  Downloads and installs Blender at the given release/version and for the given platform
+  using the release tarballs.
+
+  Relies on curl and tar by piping the download/output from curl directly into tar.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+  release:
+    description: >-
+      Blender release version to install.
+    required: true
+    default: 4.5
+  version:
+    description: >-
+      Blender version to install.
+    required: true
+    default: 4.5.2
+  platform:
+    description: >-
+      Platform descriptor to get Blender for.
+      Defaults to linux-x64
+    required: true
+    default: linux-x64
+
+  blender-url:
+    description: URL (pattern) where to download Blender from
+    required: false
+    default: https://mirror.freedif.org/blender/release/Blender${release}/blender-${version}-${platform}.tar.xz
+  blender-path:
+    description: path where to install Blender to
+    required: true
+    default: .blender
+
+  verbose:
+    description: verbose output for both curl and tar (default is false)
+    required: true
+    default: 'false'
+
+
+outputs:
+  blender-exe:
+    description: full path to Blender executable
+    value: ${{steps.get-blender-exe.outputs.blender-exe}}
+  blender-path:
+    description: full path to Blender installation folder
+    value: ${{steps.get-blender-exe.outputs.blender-path}}
+
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: download-url
+    name: Generate download URL for Blender ${{inputs.release}} and ${{inputs.version}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      blender_release: ${{inputs.release}}
+      blender_version: ${{inputs.version}}
+      blender_platform: ${{inputs.platform}}
+      blender_url: ${{inputs.blender-url}}
+    run: |
+      ## actions/blender/install/action.yml#download-url
+      import os, sys, string
+      from urllib.parse import urlparse
+
+      blender_release = str(os.getenv("blender_release"))
+      blender_version = str(os.getenv("blender_version"))
+      blender_platform = str(os.getenv("blender_platform"))
+
+      blender_url = string.Template(os.getenv("blender_url"))
+      assert blender_url is not None
+
+      blender_fullurl = blender_url.substitute(
+          release=blender_release, version=blender_version, platform=blender_platform
+      )
+      assert urlparse(blender_fullurl) is not None
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"url={blender_fullurl}")
+          print(f"url={blender_fullurl}", file=fh)
+
+
+  - id: download-unpack-editor
+    name: Download Blender from ${{steps.download-url.outputs.url}}
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      download_url: ${{steps.download-url.outputs.url}}
+      blender_path: ${{inputs.blender-path}}
+      verbose: ${{inputs.verbose}}
+    run: |
+      ## actions/blender/install/action.yml#download-unpack-editor
+      import os, sys
+      from pathlib import Path
+      from contextlib import chdir
+      from urllib.parse import urlparse
+      from posixpath import join
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      verbose = str(os.getenv("verbose")) == "true"
+      curl_verbose = "--verbose" if verbose else "--silent"
+      tar_verbose = "--verbose" if verbose else ""
+
+      blender_path = Path(os.getenv("blender_path"))
+      blender_path.mkdir(parents=True, exist_ok=True)
+      blender_version = str(os.getenv("blender_version"))
+
+      download_url = str(os.getenv("download_url"))
+      assert download_url is not None
+      assert urlparse(download_url) is not None
+
+      with chdir(blender_path):
+          cmd = f"curl -L --retry 100 --retry-max-time 500 --fail-with-body --retry-all-errors {curl_verbose} {download_url} | tar xJ {tar_verbose}"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
+
+  - id: get-blender-exe
+    name: Get Blender executable
+    uses: kagekirin/gha-py-toolbox/actions/blender/get-blender-exe@main
+    with:
+      blender-path: ${{inputs.blender-path}}
+
