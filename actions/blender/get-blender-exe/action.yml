@@ -1,0 +1,62 @@
+name: BLENDER get Blender.exe
+description: >-
+  Retrieves the Blender executable from the installation path.
+  CEAVEAT: must run after installation.
+
+inputs:
+  blender-path:
+    description: path where to install Blender to
+    required: true
+    default: .blender
+
+outputs:
+  blender-exe:
+    description: full path to Blender executable
+    value: ${{steps.get-blender-exe.outputs.blender}}
+  blender-path:
+    description: full path to Blender installation folder
+    value: ${{steps.get-blender-exe.outputs.path}}
+
+
+runs:
+  using: composite
+  steps:
+  - id: get-blender-exe
+    name: Retrieve installed Blender executable
+    shell: python
+    env:
+      blender_path: ${{inputs.blender-path}}
+    run: |
+      ## actions/blender/get-blender-exe/action.yml#get-blender-exe
+      import os, sys
+      from pathlib import Path
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      blender_path = Path(os.getenv("blender_path"))
+
+      unities = [
+          x
+          for x in blender_path.absolute().rglob("[Bb]lender")
+          if x.is_file() and os.access(x.absolute(), os.X_OK)
+      ]
+      print(f"executables: {unities}")
+      assert len(unities) > 0
+      blender_exe = unities[0]
+
+      with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"blender={blender_exe.absolute()}")
+          print(f"blender={blender_exe.absolute()}", file=fh)
+          print(f"path={blender_exe.parent.absolute()}")
+          print(f"path={blender_exe.parent.absolute()}", file=fh)
+
+  - id: verify-outputs
+    name: Verify
+    shell: cat {0}
+    run: |
+      ## actions/blender/get-blender-exe/action.yml#verify-outputs
+      steps.get-blender-exe.outputs.blender-exe
+      ${{steps.get-blender-exe.outputs.blender-exe}}
+
+      steps.get-blender-exe.outputs.path
+      ${{steps.get-blender-exe.outputs.path}}
