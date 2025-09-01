@@ -1,0 +1,37 @@
+name: BLENDER get version from an extension's `blender_manifest.toml`
+description: >-
+  Retrieves the .version of a blender_manifest.toml file
+  Validates version for semver-compatibility
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  manifest-toml:
+    description: relative path to blender_manifest.toml
+    required: false
+    default: blender_manifest.toml
+
+outputs:
+  version:
+    description: the retrieved version after validation
+    value: ${{steps.get-version.outputs.value}}
+
+runs:
+  using: composite
+  steps:
+  - id: get-version
+    name: Get ${{inputs.path}}/${{inputs.manifest-toml}} .version
+    uses: kagekirin/gha-py-toolbox/actions/toml/get-value@main
+    with:
+      path: ${{inputs.path}}
+      toml-file: ${{inputs.manifest-toml}}
+      #toml-text:
+      toml-path: '$.version'
+
+  - id: verify-version
+    name: Verify ${{steps.get-version.outputs.value}}
+    uses: kagekirin/gha-py-toolbox/actions/semver/parse-version@main
+    with:
+      version: ${{steps.get-version.outputs.value}}
