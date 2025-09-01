@@ -1,0 +1,41 @@
+name: BLENDER set version for an extension's `blender_manifest.toml`
+description: >-
+  Sets the .version of a blender_manifest.toml file
+  Validates version for semver-compatibility
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  manifest-toml:
+    description: relative path to blender_manifest.toml
+    required: false
+    default: blender_manifest.toml
+  version:
+    description: version to set
+    required: true
+
+outputs:
+  version:
+    description: the version that was set after validation
+    value: ${{steps.set-version.outputs.version}}
+
+runs:
+  using: composite
+  steps:
+  - id: verify-version
+    name: Verify ${{inputs.version}}
+    uses: kagekirin/gha-py-toolbox/actions/semver/parse-version@main
+    with:
+      version: ${{inputs.version}}
+
+  - id: set-version
+    name: Set ${{inputs.path}}/${{inputs.manifest-toml}} .version to ${{inputs.version}}
+    uses: kagekirin/gha-py-toolbox/actions/toml/set-value@main
+    with:
+      path: ${{inputs.path}}
+      toml-file: ${{inputs.manifest-toml}}
+      #toml-text:
+      toml-path: '$.version'
+      toml-value: ${{inputs.version}}
