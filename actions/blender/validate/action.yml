@@ -1,0 +1,58 @@
+name: BLENDER validate extension
+description: >-
+  Runs Blender with `extension validate` command to
+  validate a package.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  manifest-toml:
+    description: relative path to blender_manifest.toml
+    required: false
+    default: blender_manifest.toml
+  blender-exe:
+    description: full path to Blender executable
+    required: true
+
+outputs:
+  version:
+    description: the retrieved version after validation
+    value: ${{steps.get-version.outputs.value}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: blender-validate
+    name: Blender validate
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_manifest: ${{inputs.manifest-toml}}
+      inputs_blender: ${{inputs.blender-exe}}
+    run: |
+      ## actions/blender/validate/action.yml#blender-validate
+      import os, sys, pprint
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_manifest = os.getenv("inputs_manifest", "blender_manifest.toml")
+      inputs_blender = os.getenv("inputs_blender", "blender")
+
+      with chdir(inputs_path):
+          manifest = Path(inputs_manifest)
+          manifest_dir = manifest.parent
+          cmd = f"{inputs_blender} --command extension validate {manifest_dir}"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
