@@ -1,0 +1,80 @@
+name: BLENDER pack (build) extension
+description: >-
+  Runs Blender with `extension build` command to
+  build a package.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  manifest-toml:
+    description: relative path to blender_manifest.toml
+    required: false
+    default: blender_manifest.toml
+  output-dir:
+    description: |
+      The package output directory.
+      Default's to the current directory.
+    required: false
+    default: ''
+  output-filepath:
+    description: |
+      The package output filepath (should include a ``.zip`` extension).
+      Defaults to ``{id}-{version}.zip`` using values from the manifest.
+    required: false
+    default: ''
+  blender-exe:
+    description: full path to Blender executable
+    required: true
+
+outputs:
+  version:
+    description: the retrieved version after validation
+    value: ${{steps.get-version.outputs.value}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: blender-build
+    name: Blender build
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_manifest: ${{inputs.manifest-toml}}
+      inputs_output_dir: ${{inputs.output-dir}}
+      inputs_output_filepath: ${{inputs.output-filepath}}
+      inputs_blender: ${{inputs.blender-exe}}
+    run: |
+      ## actions/blender/pack/action.yml#blender-build
+      import os, sys, pprint
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_manifest = os.getenv("inputs_manifest", "blender_manifest.toml")
+      inputs_output_dir = os.getenv("inputs_output_dir", None)
+      inputs_output_filepath = os.getenv("inputs_output_filepath", None)
+      inputs_blender = os.getenv("inputs_blender", "blender")
+
+      with chdir(inputs_path):
+          manifest = Path(inputs_manifest)
+          manifest_dir = manifest.parent
+          cmd = f"{inputs_blender} --command extension build --verbose --source-dir {manifest_dir}"
+          if inputs_output_dir is not None and inputs_output_dir != "":
+              cmd += f" output-dir {inputs_output_dir}"
+
+          if inputs_output_filepath is not None and inputs_output_filepath != "":
+              cmd += f" output-filepath {inputs_output_filepath}"
+
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
