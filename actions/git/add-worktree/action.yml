@@ -1,0 +1,57 @@
+name: GIT add worktree
+description: >
+  Adds a git worktree.
+  Runs `git worktree add {path} {branch}`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  worktree-path:
+    description: >
+      Path to create for this worktree.
+    required: true
+  worktree-commitish:
+    description: >
+      Commit or reference to checkout as worktree
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - id: add-worktree
+    name: Add worktree
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_worktree_path: ${{inputs.worktree-path}}
+      inputs_worktree_commitish: ${{inputs.worktree-commitish}}
+    run: |
+      ## actions/git/add-worktree/action.yml#add-worktree
+      import os, sys, pprint
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_worktree_path = os.getenv("inputs_worktree_path", None)
+      inputs_worktree_commitish = os.getenv("inputs_worktree_commitish", None)
+
+      if inputs_worktree_path is None:
+          print("inputs_worktree_path is required", flush=True)
+          exit(1)
+
+      if inputs_worktree_commitish is None:
+          print("inputs_worktree_commitish is required", flush=True)
+          exit(2)
+
+      worktree_path = str(inputs_worktree_path)
+      worktree_commitish = str(inputs_worktree_commitish)
+
+      with chdir(inputs_path):
+          cmd = f"git worktree add {worktree_path} {worktree_commitish}"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
