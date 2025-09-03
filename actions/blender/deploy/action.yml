@@ -1,0 +1,110 @@
+name: BLENDER deploy (publish) extension
+description: >-
+  Runs Blender with `extension server-generate` command to
+  generate a listing of all packages stored in a directory.
+  This can be used to host packages which only requires static-file hosting..
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  repo-config:
+    description: |
+      An optional server configuration to include information which can't be detected.
+      Defaults to ``blender_repo.toml`` (in the repository directory).
+
+      This can be used to defined blocked extensions, for example ::
+      ```
+      schema_version = "1.0.0"
+
+      [[blocklist]]
+      id = "my_example_package"
+      reason = "Explanation for why this extension was blocked"
+      [[blocklist]]
+      id = "other_extenison"
+      reason = "Another reason for why this is blocked"
+      ```
+    required: false
+    default: ''
+  repo-dir:
+    description: |
+      The remote repository directory.
+      Default's to the current directory.
+    required: false
+    default: ''
+  generate-html:
+    description: |
+      Create a HTML file (``index.html``) as well as the repository JSON
+      to support browsing extensions online with static-hosting.
+    required: false
+    default: true
+  html-template:
+    description: |
+      An optional HTML file path to override the default HTML template with your own.
+      The following keys will be replaced with generated contents:
+      - ``${body}`` is replaced the extensions contents.
+      - ``${date}`` is replaced the creation date.
+    required: false
+    default: ''
+  blender-exe:
+    description: full path to Blender executable
+    required: true
+
+outputs:
+  version:
+    description: the retrieved version after validation
+    value: ${{steps.get-version.outputs.value}}
+
+runs:
+  using: composite
+  steps:
+  - name: Install dependencies
+    uses: kagekirin/gha-py-toolbox/actions/pip/install@main
+    with:
+      packages: >-
+        requests
+
+  - id: blender-deploy
+    name: Blender deploy
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_repo_config: ${{inputs.repo-config}}
+      inputs_repo_dir: ${{inputs.repo-dir}}
+      inputs_generate_html: ${{inputs.generate-html}}
+      inputs_html_template: ${{inputs.html-template}}
+      inputs_blender: ${{inputs.blender-exe}}
+    run: |
+      ## actions/blender/deploy/action.yml#blender-deploy
+      import os, sys, pprint
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_repo_config = os.getenv("inputs_repo_config", None)
+      inputs_repo_dir = os.getenv("inputs_repo_dir", ".")
+      inputs_generate_html = os.getenv("inputs_generate_html", "true")
+      inputs_html_template = os.getenv("inputs_html_template", None)
+      inputs_blender = os.getenv("inputs_blender", "blender")
+
+      with chdir(inputs_path):
+          cmd = f"{inputs_blender} --command extension server-generate"
+
+          if inputs_repo_dir is not None and inputs_repo_dir != "":
+              cmd += f" --repo-dir {inputs_repo_dir}"
+
+          if inputs_repo_config is not None and inputs_repo_config != "":
+              cmd += f" --repo-config {inputs_repo_config}"
+
+          if inputs_generate_html is not None and inputs_generate_html == "true":
+              cmd += f" --html"
+
+          if inputs_html_template is not None and inputs_html_template != "":
+              cmd += f" --html-template {inputs_html_template}"
+
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
