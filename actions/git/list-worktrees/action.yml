@@ -1,0 +1,34 @@
+name: GIT list worktrees
+description: >
+  List git worktrees.
+  Runs `git worktree list`.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+
+runs:
+  using: composite
+  steps:
+  - id: list-worktree
+    name: List worktree
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+    run: |
+      ## actions/git/list-worktrees/action.yml#list-worktree
+      import os, sys, pprint
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+
+      with chdir(inputs_path):
+          cmd = f"git worktree list"
+          print(cmd, flush=True)
+          err = os.waitstatus_to_exitcode(os.system(cmd))
+          exit(err)
