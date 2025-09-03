@@ -1,0 +1,55 @@
+name: GIT add worktree
+description: >
+  Adds a git worktrees.
+  Runs `git worktree add {path} {branch}` for each entry in the given worktree-map.
+
+inputs:
+  path:
+    description: path from where to run the actions
+    required: false
+    default: ${{github.workspace}}
+  worktree-map:
+    description: >
+      Simple JSON dict mapping
+      ```
+      {
+        "<path>": "<commitish>",
+      }
+      ```
+    required: true
+
+
+runs:
+  using: composite
+  steps:
+  - id: add-worktrees
+    name: Add worktrees
+    shell: python
+    env:
+      inputs_path: ${{inputs.path}}
+      inputs_worktree_map: ${{inputs.worktree-map}}
+    run: |
+      ## actions/git/add-worktrees/action.yml#add-worktrees
+      import os, sys, json, pprint
+      from pathlib import Path
+      from contextlib import chdir
+
+      os.chdir(os.getenv("GITHUB_WOKRDIR", "."))
+
+      inputs_path = os.getenv("inputs_path", ".")
+      inputs_worktree_map = os.getenv("inputs_worktree_map", None)
+      inputs_worktree_commitish = os.getenv("inputs_worktree_commitish", None)
+
+      if inputs_worktree_map is None:
+          print("inputs_worktree_map is required", flush=True)
+          exit(1)
+
+      worktree_path = json.decode(inputs_worktree_path)
+
+      with chdir(inputs_path):
+          for path, commitish in worktree_path.items():
+              cmd = f"git worktree add {path} {commitish}"
+              print(cmd, flush=True)
+              err = os.waitstatus_to_exitcode(os.system(cmd))
+              if err != 0:
+                  exit(err)
