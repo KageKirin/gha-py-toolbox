@@ -1,0 +1,138 @@
+name: blender-publish
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON string containing either a single string or the runs-on structure
+        type: string
+        default: '"ubuntu-latest"' # single and double high-commas required for valid JSON string
+      container:
+        description: URL of container image to use, empty for none
+        type: string
+        default: ''
+      max-parallel:
+        description: Number of maximum parallel runners
+        type: number
+        default: 4
+        required: false
+      blender-release:
+        description: >-
+          Blender release version to install.
+        type: string
+        required: true
+        default: '4.5'
+      blender-version:
+        description: >-
+          Blender version to install.
+        type: string
+        required: true
+        default: 4.5.2
+      blender-platform:
+        description: >-
+          Platform descriptor to get Blender for.
+          Defaults to linux-x64
+        type: string
+        required: true
+        default: linux-x64
+      blender-url:
+        description: URL (pattern) where to download Blender from
+        type: string
+        required: false
+        default: https://mirror.freedif.org/blender/release/Blender${release}/blender-${version}-${platform}.tar.xz
+      blender-path:
+        description: path where to install Blender to
+        type: string
+        required: true
+        default: .blender
+      dry-run:
+        description: Whether to run action without effects
+        type: boolean
+        default: true
+        required: false
+
+
+    secrets:
+      GHP_TOKEN:
+        description: GitHub Public (non-enterprise) access token
+        required: false
+      GH_READONLY_TOKEN:
+        description: Read-only repository access token (repo:read)
+        required: true
+      GH_PAGES_TOKEN:
+        description: GitHub token for publishing gh-pages (packages:read)
+        required: true
+
+
+jobs:
+  about:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - name: Show infos about GitHub
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ toJSON(github) }}
+
+    - name: Show infos about event
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ toJSON(github.event) }}
+
+    - name: Show build configurations
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.configurations }}
+    - name: Show build frameworks
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.frameworks }}
+    - name: Show build include
+      uses: kagekirin/gha-py-toolbox/actions/util/display-json-object@main
+      with:
+        object: ${{ inputs.include }}
+
+  publish:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container }}
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.max-parallel }}
+      matrix:
+        configurations: ${{ fromJSON(inputs.configurations) }}
+        frameworks: ${{ fromJSON(inputs.frameworks) }}
+        include: ${{ fromJSON(inputs.include) }}
+    steps:
+    - uses: kagekirin/gha-py-toolbox/macros/util/setup-system@main
+      with:
+        token: ${{ secrets.GHP_TOKEN || secrets.GITHUB_TOKEN }}
+        systems: |
+          python
+    - uses: kagekirin/gha-py-toolbox/actions/ssh/add-public-host-key@main
+      with:
+        hostname: github.com
+
+    - id: install-blender
+      uses: kagekirin/gha-py-toolbox/actions/blender/install@main
+      with:
+        release: ${{inputs.blender-release}}
+        version: ${{inputs.blender-version}}
+        platform: ${{inputs.blender-platform}}
+        blender-url: ${{inputs.blender-url}}
+        blender-path: ${{inputs.blender-path}}
+        verbose: false
+
+    - uses: kagekirin/gha-py-toolbox/jobs/blender/checkout-validate-pack-publish@main
+      with:
+        lfs: true
+        token: ${{ secrets.GH_READONLY_TOKEN || secrets.GITHUB_TOKEN }}
+        persist-credentials: true
+        blender-exe: ${{steps.install-blender.outputs.blender-exe}}
+        dry-run: ${{inputs.dry-run}}
