@@ -10,7 +10,7 @@ inputs:
       Whitespace-separated list.
 
       Possible values are:
-      `dotnet` (.net 9.0.x)
+      `dotnet` (.net 9.0.x and .net 10.0.x)
       `python` (python 3.14)
       `node` (latest)
     required: true
@@ -106,10 +106,16 @@ runs:
 
 
   - if: ${{contains(inputs.systems, 'dotnet')}}
-    id: setup-dotnet
+    id: setup-dotnet-9-0x
     uses: actions/setup-dotnet@v4
     with:
       dotnet-version: 9.0.x
+
+  - if: ${{contains(inputs.systems, 'dotnet')}}
+    id: setup-dotnet-10-0x
+    uses: actions/setup-dotnet@v4
+    with:
+      dotnet-version: 10.0.x
 
   - if: ${{contains(inputs.systems, 'dotnet')}}
     id: check-dotnet
